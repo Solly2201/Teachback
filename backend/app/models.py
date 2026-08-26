@@ -12,6 +12,7 @@ class Student(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     program: Mapped[str] = mapped_column(String(100), default="B.Tech CSE")
+    roll_no: Mapped[str] = mapped_column(String(20), default="")
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
 
     sessions: Mapped[list["TeachSession"]] = relationship(back_populates="student")
@@ -35,6 +36,9 @@ class Topic(Base):
     misconceptions: Mapped[list["Misconception"]] = relationship(
         back_populates="topic", cascade="all, delete-orphan"
     )
+    relationships: Mapped[list["ConceptRelationship"]] = relationship(
+        back_populates="topic", cascade="all, delete-orphan", order_by="ConceptRelationship.position"
+    )
     activities: Mapped[list["Activity"]] = relationship(
         back_populates="topic", cascade="all, delete-orphan"
     )
@@ -56,6 +60,28 @@ class Concept(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
 
     topic: Mapped["Topic"] = relationship(back_populates="concepts")
+
+
+class ConceptRelationship(Base):
+    """A teacher-authored link between two concepts (a tiny relationship list,
+    not a knowledge graph). `description` is the correct sentence expressing
+    the relationship; `contradiction` is an optional wrong version of it —
+    content words that appear only in the contradiction act as cue words for
+    detecting a conceptually wrong (but semantically similar) statement."""
+
+    __tablename__ = "concept_relationships"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id"))
+    source: Mapped[str] = mapped_column(String(150))
+    label: Mapped[str] = mapped_column(String(100), default="relates to")
+    target: Mapped[str] = mapped_column(String(150))
+    description: Mapped[str] = mapped_column(Text, default="")
+    contradiction: Mapped[str] = mapped_column(Text, default="")
+    probe_question: Mapped[str] = mapped_column(Text, default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    topic: Mapped["Topic"] = relationship(back_populates="relationships")
 
 
 class Misconception(Base):
@@ -131,6 +157,9 @@ class Observation(Base):
     state_index: Mapped[int] = mapped_column(Integer, nullable=True)
     state_label: Mapped[str] = mapped_column(String(40), nullable=True)
     misconception_names: Mapped[list] = mapped_column(JSON, default=list)
+    # Human-readable evidence bullets recorded at session end (live sessions);
+    # seeded observations derive their bullets from the features instead.
+    evidence_notes: Mapped[list] = mapped_column(JSON, default=list)
     source: Mapped[str] = mapped_column(String(20), default="live")  # live | seed
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Activity, Concept, Misconception, Topic
+from ..models import Activity, Concept, ConceptRelationship, Misconception, Topic
 from .helpers import topic_def
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
@@ -16,6 +16,15 @@ class ConceptIn(BaseModel):
     easier_question: str = ""
     probe_question: str = ""
     application_question: str = ""
+
+
+class RelationshipIn(BaseModel):
+    source: str
+    label: str = "relates to"
+    target: str
+    description: str = ""
+    contradiction: str = ""
+    probe_question: str = ""
 
 
 class MisconceptionIn(BaseModel):
@@ -39,6 +48,7 @@ class TopicIn(BaseModel):
     opening_prompt: str = ""
     extension_question: str = ""
     concepts: list[ConceptIn] = Field(default_factory=list)
+    relationships: list[RelationshipIn] = Field(default_factory=list)
     misconceptions: list[MisconceptionIn] = Field(default_factory=list)
     activities: list[ActivityIn] = Field(default_factory=list)
 
@@ -52,6 +62,7 @@ def list_topics(db: Session = Depends(get_db)):
             "name": t.name,
             "description": t.description,
             "concept_count": len(t.concepts),
+            "relationship_count": len(t.relationships),
             "misconception_count": len(t.misconceptions),
             "activity_count": len(t.activities),
         }
@@ -78,6 +89,12 @@ def _apply(t: Topic, data: TopicIn):
                 main_question=c.main_question, easier_question=c.easier_question,
                 probe_question=c.probe_question, application_question=c.application_question)
         for i, c in enumerate(data.concepts)
+    ]
+    t.relationships = [
+        ConceptRelationship(source=r.source, label=r.label, target=r.target,
+                            description=r.description, contradiction=r.contradiction,
+                            probe_question=r.probe_question, position=i)
+        for i, r in enumerate(data.relationships)
     ]
     t.misconceptions = [
         Misconception(name=m.name, description=m.description, clarification=m.clarification,

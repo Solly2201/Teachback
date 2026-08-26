@@ -92,9 +92,26 @@ short reference explanation. Student responses are then evaluated **against that
   explanation, rescaled to 0–1.
 - **Explanation depth / response effort** — structural richness and length measures.
 
+- **Concept relationships** — each topic also carries a small teacher-authored list of
+  relationships between concepts (e.g. *Backpropagation → computes → Gradient*), each stored
+  as one correct sentence and, where a natural error exists, one wrong version of it. A
+  student sentence demonstrates a relationship when it is similar enough to the correct
+  sentence. Because sentence embeddings are nearly blind to polarity flips ("reduces the
+  loss" vs "increases the loss" differ by ~0.002 cosine), contradictions are detected with
+  **cue words derived automatically from the teacher-authored pair** — content words that
+  appear only in the wrong version (e.g. *increases*). A sentence is marked *contradicted*
+  only when it is semantically about that relationship **and** uses such a cue, so being
+  related is never confused with being correct, and a cue word alone never triggers a flag.
+  Relationship evidence accumulates across the whole conversation and feeds the session
+  summary, the follow-up question selection and the recommendation explanation (it is *not*
+  added to the HMM feature vector, so the trained artifact stays valid).
+
 Thresholds were tuned on the labelled evaluation set (`data/nlp_eval/labeled_responses.json`).
-All five outputs are heuristic 0–1 *observation features* for the HMM — they are not claimed
-to be objective measurements of human understanding.
+All outputs are heuristic *evidence signals* — the system estimates **evidence of conceptual
+understanding within a bounded, teacher-authored topic definition**. Semantic similarity is
+used to tolerate differences in wording, while concept relationships and misconception
+definitions provide additional structure. It does not claim to objectively measure human
+understanding.
 
 **Guided conversational teach-back** is driven by a deterministic rule engine
 (`nlp/conversation.py`), *not* a language model. Instead of asking for one long essay, the
@@ -256,8 +273,14 @@ summarized at the bottom of the Teacher Dashboard.
   from the stored descriptions can be missed, and the thresholds were tuned on the same small
   labelled set they are evaluated on.
 - Semantic correctness saturates for fluent on-topic text even when partially wrong.
-- The HMM is trained on synthetic trajectories; its high accuracy reflects recovery of the
-  generating process, not validated performance on real students.
+- The HMM is trained **and evaluated on synthetic trajectories**; its high accuracy reflects
+  recovery of the generating process, not validated performance on real students. The
+  evaluation numbers above therefore do not establish real-world student classification
+  accuracy.
+- Relationship contradiction detection relies on cue words from the teacher-authored wrong
+  version; a contradiction phrased with entirely different vocabulary (or negation, e.g.
+  "does not decrease") can be missed. Analogies with no shared content words may fall back
+  to an easier follow-up question rather than being credited immediately.
 - Misconception detection needs the wrong belief to be phrased somewhat like the stored claim.
 - Authentication is a demo role selector; there is no real user management.
 

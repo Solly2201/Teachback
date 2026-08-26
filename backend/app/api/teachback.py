@@ -167,11 +167,18 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
 
     detected = sorted({m for a in analyses for m in a.get("detected_misconceptions", [])})
     resolved = sorted(set(plan.get("resolved", [])))
+    # unresolved misconceptions count fully against the student; a misconception
+    # corrected during the session is attenuated rather than kept at its peak —
+    # the correction itself is evidence of understanding
+    unresolved = [m for m in detected if m not in resolved]
+    miscon_score = nlp_feats["misconception_score"]
+    if detected:
+        miscon_score = round(miscon_score * (0.3 + 0.7 * len(unresolved) / len(detected)), 3)
 
     features = [
         nlp_feats["concept_coverage"],
         nlp_feats["semantic_correctness"],
-        nlp_feats["misconception_score"],
+        miscon_score,
         nlp_feats["explanation_depth"],
         nlp_feats["response_effort"],
         round(data.attention / 10.0, 3),
@@ -187,9 +194,6 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         .first()
     )
     previous_state_label = prev_obs.state_label if prev_obs else None
-
-    # unresolved misconceptions still count against the student; resolved ones don't
-    unresolved = [m for m in detected if m not in resolved]
 
     obs = Observation(
         student_id=session.student_id,
@@ -238,10 +242,40 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
     demonstrated = [c["name"] for c in concept_summary if c["status"] == "covered"]
     needs_clarification = [c["name"] for c in concept_summary if c["status"] in ("partial", "unclear", "missing")]
 
+    # relationship evidence accumulated by the conversation plan
+    rel_status_map = {"demonstrated": "demonstrated", "contradicted": "needs_clarification",
+                      "unclear": "needs_clarification", "pending": "not_shown"}
+    relationship_summary = [
+        {"source": r["source"], "label": r.get("label", "relates to"), "target": r["target"],
+         "status": rel_status_map.get(r["status"], "not_shown")}
+        for r in plan.get("relationships", [])
+    ]
+    rels_demonstrated = [r for r in relationship_summary if r["status"] == "demonstrated"]
+    rels_unclear = [r for r in relationship_summary if r["status"] == "needs_clarification"]
+
     rec = recommend(
         inference["current_state"], tdef["activities"], unresolved,
-        evidence={"demonstrated": demonstrated, "unclear": needs_clarification},
+        evidence={
+            "demonstrated": demonstrated,
+            "unclear": needs_clarification
+            + [f"the connection {r['source']} → {r['target']}" for r in rels_unclear],
+        },
     )
+
+    # conceptual evidence bullets stored with the observation, shown on the
+    # progress page to explain WHY the learning state is what it is
+    evidence_notes = [f"{len(demonstrated)}/{len(concept_summary)} concepts demonstrated"] if concept_summary else []
+    if relationship_summary:
+        evidence_notes.append(
+            f"{len(rels_demonstrated)}/{len(relationship_summary)} key relationships demonstrated")
+    evidence_notes += [f"Needs clarification: {name}" for name in needs_clarification[:2]]
+    evidence_notes += [f"Connection needing clarification: {r['source']} → {r['target']}" for r in rels_unclear[:2]]
+    evidence_notes += [f"Misconception resolved: {m}" for m in resolved]
+    evidence_notes += [f"Misconception still open: {m}" for m in unresolved]
+    if features[4] >= 0.6:
+        evidence_notes.append("High effort")
+    obs.evidence_notes = evidence_notes
+    db.commit()
 
     miscon_details = [
         {"name": m["name"], "clarification": m.get("clarification", ""),
@@ -254,6 +288,7 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         "observation": observation_out(obs),
         "session_features": dict(zip(FEATURE_NAMES, features)),
         "concept_summary": concept_summary,
+        "relationship_summary": relationship_summary,
         "detected_misconceptions": unresolved,
         "resolved_misconceptions": resolved,
         "misconception_details": miscon_details,

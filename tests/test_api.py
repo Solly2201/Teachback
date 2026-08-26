@@ -52,17 +52,44 @@ def test_topic_crud():
         "name": "Test Topic",
         "description": "d",
         "reference_explanation": "ref",
-        "concepts": [{"name": "c1", "description": "concept one"}],
+        "concepts": [{"name": "c1", "description": "concept one",
+                      "main_question": "What is c1?", "easier_question": "Simpler: c1?",
+                      "probe_question": "More on c1?", "application_question": "Apply c1?"}],
+        "relationships": [{"source": "c1", "label": "leads to", "target": "c2",
+                           "description": "c1 leads to c2.",
+                           "contradiction": "c1 prevents c2.",
+                           "probe_question": "How does c1 relate to c2?"}],
         "misconceptions": [{"name": "m1", "description": "wrong claim", "clarification": "right claim"}],
-        "activities": [{"title": "a1", "description": "act", "target_state": "unclear"}],
+        "activities": [{"title": "a1", "description": "act", "kind": "practice", "target_state": "unclear"}],
     }
     r = client.post("/api/topics", json=payload)
     assert r.status_code == 200
-    tid = r.json()["id"]
+    created = r.json()
+    tid = created["id"]
+    assert created["relationships"][0]["source"] == "c1"
+    assert created["concepts"][0]["main_question"] == "What is c1?"
+
+    # editing the knowledge structure round-trips every field
     payload["name"] = "Test Topic v2"
+    payload["concepts"][0]["main_question"] = "What is c1 really?"
+    payload["relationships"][0]["description"] = "c1 always leads to c2."
+    payload["relationships"].append({"source": "c2", "target": "c3",
+                                     "description": "c2 enables c3."})
     r = client.put(f"/api/topics/{tid}", json=payload)
     assert r.status_code == 200
-    assert r.json()["name"] == "Test Topic v2"
+    updated = r.json()
+    assert updated["name"] == "Test Topic v2"
+    assert updated["concepts"][0]["main_question"] == "What is c1 really?"
+    assert len(updated["relationships"]) == 2
+    assert updated["relationships"][0]["description"] == "c1 always leads to c2."
+
+    # the edited structure immediately drives new sessions
+    students = client.get("/api/students").json()
+    r = client.post("/api/sessions/start", json={"student_id": students[0]["id"], "topic_id": tid})
+    assert r.status_code == 200
+    start = r.json()
+    assert start["prompt"] == "What is c1 really?"
+    assert start["timeline"][0]["name"] == "c1"
 
 
 @pytest.mark.skipif(not hmm_available(), reason="HMM not trained (run scripts/build_all.py)")

@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 from .database import Base, SessionLocal, engine
 from .hmm.model import hmm_available, infer_sequence
 from .hmm.synthetic import generate_dataset
-from .models import (Activity, Concept, Misconception, Observation, Response,
-                     Student, TeachSession, Topic)
+from .models import (Activity, Concept, ConceptRelationship, Misconception,
+                     Observation, Response, Student, TeachSession, Topic)
 from .seed_content import DEMO_STUDENTS, TOPICS
 from .states import STATE_NAMES
 
@@ -31,6 +31,8 @@ def _migrate():
         ("concepts", "easier_question", "TEXT DEFAULT ''"),
         ("concepts", "application_question", "TEXT DEFAULT ''"),
         ("teach_sessions", "plan", "JSON"),
+        ("observations", "evidence_notes", "JSON"),
+        ("students", "roll_no", "VARCHAR(20) DEFAULT ''"),
     ]
     with engine.connect() as conn:
         for table, col, ddl in additions:
@@ -48,7 +50,7 @@ def seed_db(force: bool = False) -> bool:
             return False
         if force:
             for model in (Observation, Response, TeachSession, Activity,
-                          Misconception, Concept, Student, Topic):
+                          Misconception, ConceptRelationship, Concept, Student, Topic):
                 db.query(model).delete()
             db.commit()
 
@@ -70,6 +72,13 @@ def seed_db(force: bool = False) -> bool:
                             application_question=c.get("application_question", ""),
                             position=i)
                 )
+            for i, r in enumerate(t.get("relationships", [])):
+                topic.relationships.append(
+                    ConceptRelationship(source=r["source"], label=r.get("label", "relates to"),
+                                        target=r["target"], description=r["description"],
+                                        contradiction=r.get("contradiction", ""),
+                                        probe_question=r.get("probe_question", ""), position=i)
+                )
             for m in t["misconceptions"]:
                 topic.misconceptions.append(
                     Misconception(name=m["name"], description=m["description"],
@@ -88,7 +97,8 @@ def seed_db(force: bool = False) -> bool:
         rng = random.Random(11)
         students = []
         for d in DEMO_STUDENTS:
-            s = Student(name=d["name"], program=d["program"], is_demo=True)
+            s = Student(name=d["name"], program=d["program"],
+                        roll_no=d.get("roll_no", ""), is_demo=True)
             db.add(s)
             students.append(s)
         for i in range(24):

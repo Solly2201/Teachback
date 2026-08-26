@@ -192,6 +192,8 @@ export default function TeachBack({ user }) {
   if (result) {
     const demonstrated = result.concept_summary.filter((c) => c.status === 'covered')
     const needsWork = result.concept_summary.filter((c) => c.status !== 'covered')
+    const relsDemonstrated = (result.relationship_summary || []).filter((r) => r.status === 'demonstrated')
+    const relsUnclear = (result.relationship_summary || []).filter((r) => r.status === 'needs_clarification')
     return (
       <div className="space-y-5">
         <div className="banner">Session Complete — {session.topic.name}</div>
@@ -235,6 +237,19 @@ export default function TeachBack({ user }) {
               {demonstrated.length === 0 && (
                 <li className="text-sm text-charcoal-light">No concepts were clearly demonstrated this time — that&apos;s okay, it tells us where to focus.</li>
               )}
+              {relsDemonstrated.length > 0 && (
+                <li className="pt-2 mt-1 border-t border-zinc-100">
+                  <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-1.5">Connections you made</div>
+                  <ul className="space-y-1.5">
+                    {relsDemonstrated.map((r) => (
+                      <li key={`${r.source}-${r.target}`} className="flex items-center gap-2 text-sm">
+                        <span className="text-emerald-600">✓</span>
+                        <span className="text-charcoal">{r.source} <span className="text-zinc-400">→</span> {r.target}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              )}
               {result.resolved_misconceptions?.map((m) => (
                 <li key={m} className="flex items-start gap-2 text-sm">
                   <span className="text-emerald-600">✓</span>
@@ -255,7 +270,14 @@ export default function TeachBack({ user }) {
                   {c.status === 'partial' && <span className="text-xs text-charcoal-light">(partly there)</span>}
                 </li>
               ))}
-              {needsWork.length === 0 && (
+              {relsUnclear.map((r) => (
+                <li key={`${r.source}-${r.target}`} className="flex items-center gap-2 text-sm">
+                  <span className="text-amber-600">⚠</span>
+                  <span className="text-charcoal">{r.source} <span className="text-zinc-400">→</span> {r.target}</span>
+                  <span className="text-xs text-charcoal-light">(connection)</span>
+                </li>
+              ))}
+              {needsWork.length === 0 && relsUnclear.length === 0 && (
                 <li className="text-sm text-emerald-700">Nothing — every concept was demonstrated. Well done.</li>
               )}
             </ul>

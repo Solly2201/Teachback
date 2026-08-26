@@ -35,6 +35,16 @@ CONCEPT_PARTIAL_T = 0.56   # partial credit band
 MISCONCEPTION_T = 0.65     # minimum similarity to the wrong claim to flag it
 MISCONCEPTION_MARGIN = 0.08  # must beat similarity to the correction by this
 
+# Concept relationships. Embeddings tolerate rephrasing but are nearly blind to
+# polarity flips ("reduces the loss" vs "increases the loss" differ by ~0.002
+# cosine), so contradictions are detected with cue words derived automatically
+# from the teacher-authored pair: content words that appear in the wrong
+# version but not in the correct one (e.g. {"increases"}). A sentence is
+# contradicted only if it is semantically ABOUT the relationship AND contains
+# such a cue — never from a cue word alone.
+RELATIONSHIP_T = 0.68      # similarity at which a relationship counts as demonstrated
+RELATIONSHIP_ABOUT_T = 0.60  # sentence is on-topic enough to check for contradiction
+
 _STOPWORDS = set(
     """a an the and or but if then else of in on at to for from by with about as is are was
     were be been being do does did have has had it its this that these those i you he she we
@@ -64,6 +74,20 @@ def content_words(text: str) -> list[str]:
     return [w for w in words if w not in _STOPWORDS and len(w) > 2]
 
 
+def _word_match(a: str, b: str) -> bool:
+    """Loose inflection-tolerant match: 'increase'/'increases'/'increasing'."""
+    return a == b or (len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5])
+
+
+def contradiction_cues(description: str, contradiction: str) -> set[str]:
+    """Content words that appear only in the wrong version of a relationship."""
+    if not contradiction:
+        return set()
+    desc_words = set(content_words(description))
+    return {w for w in content_words(contradiction)
+            if not any(_word_match(w, d) for d in desc_words)}
+
+
 def analyze_response(text: str, topic_def: dict) -> dict:
     """Analyze one student response against a structured topic definition.
 
@@ -79,14 +103,16 @@ def analyze_response(text: str, topic_def: dict) -> dict:
 
     concepts = topic_def.get("concepts", [])
     misconceptions = topic_def.get("misconceptions", [])
+    relationships = topic_def.get("relationships", [])
 
     # Build one embedding batch for everything to keep this fast.
     concept_texts = [f"{c['name']}: {c['description']}" for c in concepts]
     miscon_texts = [m["description"] for m in misconceptions]
     clar_texts = [m.get("clarification", "") or m["description"] for m in misconceptions]
+    rel_texts = [r["description"] for r in relationships]
     ref_text = topic_def.get("reference_explanation", "") or topic_def.get("name", "")
 
-    to_embed = sentences + [text] + concept_texts + miscon_texts + clar_texts + [ref_text]
+    to_embed = sentences + [text] + concept_texts + miscon_texts + clar_texts + rel_texts + [ref_text]
     emb = embed(to_embed)
 
     n_s = len(sentences)
@@ -96,6 +122,7 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     concept_emb = emb[i : i + len(concepts)]; i += len(concepts)
     miscon_emb = emb[i : i + len(misconceptions)]; i += len(misconceptions)
     clar_emb = emb[i : i + len(misconceptions)]; i += len(misconceptions)
+    rel_emb = emb[i : i + len(relationships)]; i += len(relationships)
     ref_emb = emb[i : i + 1]
 
     # --- concept coverage ---
@@ -158,6 +185,47 @@ def analyze_response(text: str, topic_def: dict) -> dict:
             # scale: one strong hit ~0.6-0.8, several hits saturate towards 1
             misconception_score = float(np.clip(max(hit_sims) * 0.6 + 0.2 * (len(hit_sims) - 1) + 0.2, 0, 1))
 
+    # --- concept relationships (demonstrated / contradicted / not shown) ---
+    relationship_results = []
+    if relationships and n_s:
+        sims_r = cosine_matrix(rel_emb, sent_emb)  # relationships x sentences
+        sent_words = [content_words(s) for s in sentences]
+        for ri, r in enumerate(relationships):
+            best_j = int(np.argmax(sims_r[ri]))
+            best = float(sims_r[ri, best_j])
+            cues = contradiction_cues(r["description"], r.get("contradiction", ""))
+            # a sentence contradicts only if it is about this relationship AND
+            # uses a cue word unique to the teacher-authored wrong version
+            contradicted_j = next(
+                (j for j in range(n_s)
+                 if float(sims_r[ri, j]) >= RELATIONSHIP_ABOUT_T
+                 and any(_word_match(c, w) for c in cues for w in sent_words[j])),
+                None,
+            ) if cues else None
+            if contradicted_j is not None:
+                status, match_j = "contradicted", contradicted_j
+            elif best >= RELATIONSHIP_T:
+                status, match_j = "demonstrated", best_j
+            else:
+                status, match_j = "not_shown", None
+            relationship_results.append(
+                {
+                    "id": r.get("id"),
+                    "source": r["source"],
+                    "label": r.get("label", "relates to"),
+                    "target": r["target"],
+                    "status": status,
+                    "similarity": round(best, 3),
+                    "matched_sentence": sentences[match_j] if match_j is not None else None,
+                }
+            )
+    else:
+        relationship_results = [
+            {"id": r.get("id"), "source": r["source"], "label": r.get("label", "relates to"),
+             "target": r["target"], "status": "not_shown", "similarity": 0.0, "matched_sentence": None}
+            for r in relationships
+        ]
+
     # --- semantic correctness ---
     raw = float(cosine_matrix(full_emb, ref_emb)[0, 0]) if n_words else 0.0
     # cosine values for on-topic explanations live roughly in [0.2, 0.8]; rescale
@@ -176,6 +244,7 @@ def analyze_response(text: str, topic_def: dict) -> dict:
         "concepts": concept_results,
         "misconceptions": miscon_results,
         "detected_misconceptions": detected,
+        "relationships": relationship_results,
         "features": {
             "concept_coverage": round(concept_coverage, 3),
             "semantic_correctness": round(semantic_correctness, 3),

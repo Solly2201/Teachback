@@ -76,7 +76,9 @@ export default function RoleSelect({ onSelect }) {
                   >
                     <div>
                       <div className="font-semibold text-sm text-charcoal">{s.name}</div>
-                      <div className="text-xs text-charcoal-light">{s.program}</div>
+                      <div className="text-xs text-charcoal-light">
+                        {s.program}{s.roll_no ? ` · ${s.roll_no}` : ''}
+                      </div>
                     </div>
                     <StateBadge label={s.current_state_label} />
                   </button>

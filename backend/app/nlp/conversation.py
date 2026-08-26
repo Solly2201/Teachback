@@ -28,6 +28,7 @@ CTX_COVERED_T = 0.66
 CTX_PARTIAL_T = 0.58
 MIN_WORDS = 3
 MAX_QUESTIONS = 12
+MAX_REL_QUESTIONS = 2  # at most this many relationship questions per session
 
 GIVE_UP_PHRASES = ("i don't know", "i dont know", "idk", "no idea", "not sure", "no clue")
 
@@ -79,10 +80,17 @@ def build_plan(topic_def: dict) -> dict:
             {"id": c.get("id"), "name": c["name"], "status": "pending", "attempts": 0}
             for c in topic_def.get("concepts", [])
         ],
+        "relationships": [
+            {"id": r.get("id"), "source": r["source"], "label": r.get("label", "relates to"),
+             "target": r["target"], "status": "pending", "asked": False}
+            for r in topic_def.get("relationships", [])
+        ],
         "current": 0,
         "question_no": 1,
         "asked_kind": "main",
         "asked_miscon": None,
+        "asked_rel": None,
+        "rel_questions": 0,
         "miscon_seen": [],
         "resolved": [],
         "detected": [],
@@ -163,8 +171,39 @@ def _mark_incidental(plan: dict, analysis: dict) -> list[str]:
     return newly
 
 
+def _update_relationships(plan: dict, analysis: dict) -> None:
+    """Accumulate relationship evidence across the whole session.
+
+    Evidence only improves: a relationship once demonstrated stays
+    demonstrated; a contradiction is recorded unless the relationship was
+    already demonstrated correctly.
+    """
+    by_key = {(r.get("id"), r["source"], r["target"]): r for r in plan.get("relationships", [])}
+    for res in analysis.get("relationships", []):
+        entry = by_key.get((res.get("id"), res["source"], res["target"]))
+        if entry is None:
+            continue
+        if res["status"] == "demonstrated":
+            entry["status"] = "demonstrated"
+        elif res["status"] == "contradicted" and entry["status"] != "demonstrated":
+            entry["status"] = "contradicted"
+
+
+def _rel_def(topic_def: dict, entry: dict) -> dict:
+    for r in topic_def.get("relationships", []):
+        if (entry.get("id") is not None and r.get("id") == entry["id"]) or (
+            r["source"] == entry["source"] and r["target"] == entry["target"]
+        ):
+            return r
+    return entry
+
+
+GENERIC_REL_QUESTION = "You've got {source}. How does it relate to {target}?"
+
+
 def _advance(plan: dict, topic_def: dict, feedback: str) -> dict:
-    """Move to the next pending concept, or the extension question, or finish."""
+    """Move to the next pending concept, then probe relationship gaps, then
+    the extension question, then finish."""
     topic_name = topic_def.get("name", "this topic")
     for i, entry in enumerate(plan["concepts"]):
         if entry["status"] == "pending":
@@ -184,7 +223,39 @@ def _advance(plan: dict, topic_def: dict, feedback: str) -> dict:
                 "done": False,
             }
 
-    all_good = all(e["status"] == "covered" for e in plan["concepts"]) and not plan["detected"]
+    # every concept visited -> probe the most important relationship gaps
+    # (contradicted connections first, then ones not yet demonstrated)
+    if plan["rel_questions"] < MAX_REL_QUESTIONS and plan["question_no"] < MAX_QUESTIONS:
+        candidates = sorted(
+            (r for r in plan.get("relationships", [])
+             if not r["asked"] and r["status"] in ("contradicted", "pending")),
+            key=lambda r: 0 if r["status"] == "contradicted" else 1,
+        )
+        if candidates:
+            rel = candidates[0]
+            rel["asked"] = True
+            plan["rel_questions"] += 1
+            plan["asked_kind"] = "relationship"
+            plan["asked_rel"] = [rel.get("id"), rel["source"], rel["target"]]
+            plan["asked_miscon"] = None
+            plan["question_no"] += 1
+            rdef = _rel_def(topic_def, rel)
+            question = rdef.get("probe_question") or GENERIC_REL_QUESTION.format(
+                source=rel["source"], target=rel["target"])
+            reason = (
+                f"The connection between {rel['source']} and {rel['target']} sounded mixed up — checking it."
+                if rel["status"] == "contradicted"
+                else f"Checking how {rel['source']} and {rel['target']} connect — that link hasn't come up yet."
+            )
+            return {
+                "feedback": feedback,
+                "followup": {"kind": "relationship", "text": question,
+                             "concept": f"{rel['source']} → {rel['target']}", "reason": reason},
+                "done": False,
+            }
+
+    rels_ok = all(r["status"] in ("demonstrated", "pending") for r in plan.get("relationships", []))
+    all_good = all(e["status"] == "covered" for e in plan["concepts"]) and not plan["detected"] and rels_ok
     extension = topic_def.get("extension_question", "")
     if all_good and extension and not plan["extension_asked"] and plan["question_no"] < MAX_QUESTIONS:
         plan["extension_asked"] = True
@@ -216,8 +287,11 @@ def play_turn(plan: dict, analysis: dict, topic_def: dict) -> tuple[dict, dict]:
     closing.
     """
     plan = {**plan, "concepts": [dict(c) for c in plan["concepts"]],
+            "relationships": [dict(r) for r in plan.get("relationships", [])],
             "miscon_seen": list(plan["miscon_seen"]), "resolved": list(plan["resolved"]),
             "detected": list(plan["detected"])}
+    plan.setdefault("rel_questions", 0)
+    plan.setdefault("asked_rel", None)
     topic_name = topic_def.get("name", "this topic")
     qn = plan["question_no"]
     extras: dict = {}
@@ -231,6 +305,8 @@ def play_turn(plan: dict, analysis: dict, topic_def: dict) -> tuple[dict, dict]:
     incidental = _mark_incidental(plan, analysis)
     if incidental:
         extras["incidental"] = incidental
+    # relationship evidence accumulates from every answer, whatever was asked
+    _update_relationships(plan, analysis)
 
     # Hard stop: never exceed the question budget.
     if plan["question_no"] >= MAX_QUESTIONS:
@@ -260,6 +336,32 @@ def play_turn(plan: dict, analysis: dict, topic_def: dict) -> tuple[dict, dict]:
             "We'll come back to this one later."
         result = _advance(plan, topic_def, feedback)
         return plan, {**result, **extras}
+
+    # --- answering a relationship question ---
+    if plan["asked_kind"] == "relationship" and plan["asked_rel"]:
+        rid, rsource, rtarget = plan["asked_rel"]
+        entry = next(
+            (r for r in plan["relationships"]
+             if (rid is not None and r.get("id") == rid) or (r["source"] == rsource and r["target"] == rtarget)),
+            None,
+        )
+        plan["asked_rel"] = None
+        if entry is not None:
+            if entry["status"] == "demonstrated":
+                result = _advance(plan, topic_def, _pick(ACK_CORRECT, qn))
+                return plan, {**result, **extras}
+            rdef = _rel_def(topic_def, entry)
+            if entry["status"] == "contradicted":
+                feedback = "Careful with that connection — " + (
+                    rdef.get("description") or f"think again about how {entry['source']} relates to {entry['target']}."
+                )
+            else:
+                entry["status"] = "unclear"
+                feedback = "That's okay — here's the link: " + (
+                    rdef.get("description") or f"{entry['source']} is connected to {entry['target']}."
+                ) + " Let's keep going."
+            result = _advance(plan, topic_def, feedback)
+            return plan, {**result, **extras}
 
     # --- answering the extension question: no status changes, just close ---
     if plan["asked_kind"] == "extension":

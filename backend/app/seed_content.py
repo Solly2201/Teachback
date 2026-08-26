@@ -61,6 +61,35 @@ TOPICS = [
                 "application_question": "How would you decide when to stop training?",
             },
         ],
+        "relationships": [
+            {
+                "source": "Backpropagation", "label": "computes", "target": "Gradient",
+                "description": "Backpropagation computes the gradient of the loss for every weight.",
+                "probe_question": "What does backpropagation actually calculate?",
+            },
+            {
+                "source": "Gradient", "label": "describes change of loss w.r.t.", "target": "Weight",
+                "description": "The gradient describes how the loss changes with respect to each weight.",
+                "probe_question": "What does the gradient tell us about a weight?",
+            },
+            {
+                "source": "Gradient descent", "label": "uses", "target": "Gradient",
+                "description": "Gradient descent uses the gradients to decide how to change the weights.",
+                "probe_question": "What does gradient descent do with the gradients?",
+            },
+            {
+                "source": "Gradient descent", "label": "updates", "target": "Weight",
+                "description": "Gradient descent updates the weights in the direction that reduces the loss.",
+                "contradiction": "Gradient descent updates the weights in the direction that increases the loss.",
+                "probe_question": "In which direction does gradient descent move the weights?",
+            },
+            {
+                "source": "Weight update", "label": "aims to reduce", "target": "Loss",
+                "description": "The weights are updated so that the loss decreases over time.",
+                "contradiction": "The weights are updated so that the loss increases over time.",
+                "probe_question": "Why do we change the weights at all — what should happen to the loss?",
+            },
+        ],
         "misconceptions": [
             {
                 "name": "Backpropagation is the same as gradient descent",
@@ -154,6 +183,30 @@ TOPICS = [
                 "application_question": "You have very little training data — which technique would you reach for first, and why?",
             },
         ],
+        "relationships": [
+            {
+                "source": "Overfitting", "label": "shows up as", "target": "Generalisation gap",
+                "description": "Overfitting shows up as a large gap between training performance and validation performance.",
+                "probe_question": "If a model overfits, what would you see when comparing training and validation results?",
+            },
+            {
+                "source": "Model complexity", "label": "increases risk of", "target": "Overfitting",
+                "description": "More complex models with many parameters overfit more easily.",
+                "probe_question": "How does the complexity of a model affect its tendency to overfit?",
+            },
+            {
+                "source": "Regularization", "label": "constrains", "target": "Model complexity",
+                "description": "Regularization penalises large weights so the model stays simpler.",
+                "contradiction": "Regularization deletes noisy training examples so the model stays simpler.",
+                "probe_question": "What does regularization actually act on to keep the model simple?",
+            },
+            {
+                "source": "Regularization", "label": "improves", "target": "Generalisation",
+                "description": "Regularization reduces overfitting so the model performs better on unseen data.",
+                "contradiction": "Regularization improves performance on the training data by fitting it more closely.",
+                "probe_question": "Which data does regularization help the model perform better on?",
+            },
+        ],
         "misconceptions": [
             {
                 "name": "More training always helps",
@@ -242,6 +295,29 @@ TOPICS = [
                 "application_question": "Why decode over the whole observation sequence instead of one step at a time?",
             },
         ],
+        "relationships": [
+            {
+                "source": "Hidden state", "label": "emits", "target": "Observation",
+                "description": "Each hidden state emits the visible observations with certain probabilities.",
+                "probe_question": "How are the things we observe connected to the hidden states?",
+            },
+            {
+                "source": "Transition probabilities", "label": "govern", "target": "State change",
+                "description": "Transition probabilities describe how the system moves between hidden states over time.",
+                "probe_question": "What controls how the hidden state changes from one step to the next?",
+            },
+            {
+                "source": "Markov property", "label": "constrains", "target": "Transitions",
+                "description": "The next state depends only on the current state, not on the whole earlier history.",
+                "contradiction": "The next state depends on the entire history of all previous states.",
+                "probe_question": "How much of the past matters for predicting the next state?",
+            },
+            {
+                "source": "Viterbi", "label": "infers", "target": "Hidden states",
+                "description": "The Viterbi algorithm infers the most likely sequence of hidden states from the observations.",
+                "probe_question": "Given the observations, how do we recover the hidden states?",
+            },
+        ],
         "misconceptions": [
             {
                 "name": "States are directly observable",
@@ -286,4 +362,6 @@ DEMO_STUDENTS = [
     {"name": "Ananya Iyer", "program": "B.Tech CSE"},
     {"name": "Vivaan Desai", "program": "B.Tech CSE"},
     {"name": "Sara Kulkarni", "program": "MBA Tech"},
+    # appended last so the earlier students keep their exact seeded histories
+    {"name": "Shreshtha Bindal", "program": "B.Tech CE", "roll_no": "B023"},
 ]

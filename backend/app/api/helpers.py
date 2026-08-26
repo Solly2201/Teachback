@@ -23,6 +23,12 @@ def topic_def(topic: Topic) -> dict:
              "clarification": m.clarification, "probe_question": m.probe_question}
             for m in topic.misconceptions
         ],
+        "relationships": [
+            {"id": r.id, "source": r.source, "label": r.label, "target": r.target,
+             "description": r.description, "contradiction": r.contradiction,
+             "probe_question": r.probe_question}
+            for r in topic.relationships
+        ],
         "activities": [
             {"id": a.id, "title": a.title, "description": a.description,
              "kind": a.kind, "target_state": a.target_state}
@@ -68,7 +74,9 @@ def observation_out(o: Observation) -> dict:
         "state_index": o.state_index,
         "state_label": o.state_label,
         "misconceptions": o.misconception_names or [],
-        "evidence": observation_evidence(o),
+        # live sessions store their own conceptual evidence bullets; seeded
+        # observations fall back to feature-derived bullets
+        "evidence": (o.evidence_notes or None) or observation_evidence(o),
         "source": o.source,
         "created_at": o.created_at.isoformat() if o.created_at else None,
     }
@@ -79,6 +87,7 @@ def student_out(s: Student, current_state: int | None = None) -> dict:
         "id": s.id,
         "name": s.name,
         "program": s.program,
+        "roll_no": s.roll_no or "",
         "is_demo": s.is_demo,
         "current_state": current_state,
         "current_state_label": STATE_NAMES[current_state] if current_state is not None else None,
