@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { TeacherContextBar, useTeacherContext } from '../components/TeacherContext.jsx'
 import { api } from '../services/api.js'
 
 const emptyTopic = {
@@ -22,13 +23,18 @@ const STATE_OPTIONS = [
 ]
 
 export default function Topics() {
+  const context = useTeacherContext()
+  const subjectId = context.subject?.id
   const [topics, setTopics] = useState(null)
   const [editing, setEditing] = useState(null) // {id?, ...topicData}
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
 
-  const load = () => api.topics().then(setTopics).catch((e) => setMessage({ kind: 'error', text: e.message }))
-  useEffect(() => { load() }, [])
+  const load = () => {
+    if (!subjectId) return
+    api.topics(subjectId).then(setTopics).catch((e) => setMessage({ kind: 'error', text: e.message }))
+  }
+  useEffect(() => { load() }, [subjectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openTopic = async (id) => {
     setMessage(null)
@@ -67,13 +73,14 @@ export default function Topics() {
     return (
       <div className="space-y-5">
         <div className="banner">Topic Management</div>
+        <TeacherContextBar context={context} />
         {message && (
           <div className={`card p-4 text-sm ${message.kind === 'ok' ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-red-700 bg-red-50 border-red-200'}`}>
             {message.text}
           </div>
         )}
         <div className="flex justify-end">
-          <button onClick={() => setEditing({ ...emptyTopic })} className="btn-primary">+ New topic</button>
+          <button onClick={() => setEditing({ ...emptyTopic, subject_id: subjectId })} className="btn-primary">+ New topic</button>
         </div>
         <div className="grid md:grid-cols-2 gap-4">
           {!topics && <div className="text-sm text-charcoal-light">Loading topics…</div>}
@@ -260,12 +267,13 @@ export default function Topics() {
       <div className="card">
         <div className="card-header">
           <span>Activities (one per learning state)</span>
-          <button onClick={() => addItem('activities', { title: '', description: '', kind: 'practice', target_state: 'understanding' })} className="text-white/90 hover:text-white normal-case font-normal">+ add</button>
+          <button onClick={() => addItem('activities', { title: '', description: '', kind: 'practice', target_state: 'understanding', content: '', question: '' })} className="text-white/90 hover:text-white normal-case font-normal">+ add</button>
         </div>
         <div className="p-4 space-y-3">
           <p className="text-xs text-charcoal-light">
             <strong>What should students do at different learning states?</strong> After a session, the student
-            is recommended the activity matching their estimated state.
+            is recommended the activity matching their estimated state — and can open and complete it directly.
+            Add the content students will actually see and the short task they should complete.
           </p>
           {editing.activities.map((a, i) => (
             <div key={i} className="border border-zinc-200 rounded-md p-3 grid md:grid-cols-2 gap-3 relative">
@@ -288,6 +296,14 @@ export default function Topics() {
                     <option key={key} value={key}>{name}</option>
                   ))}
                 </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="label">Activity content (what the student reads or works through)</label>
+                <textarea className="input min-h-[70px]" value={a.content || ''} onChange={(e) => setItem('activities', i, 'content', e.target.value)} placeholder="Imagine you are hiking down a foggy hill. The hill represents the loss landscape…" />
+              </div>
+              <div className="md:col-span-2">
+                <label className="label">Question / short task (what the student answers to complete the activity)</label>
+                <input className="input" value={a.question || ''} onChange={(e) => setItem('activities', i, 'question', e.target.value)} placeholder="What does the slope of the hill represent?" />
               </div>
               <button onClick={() => removeItem('activities', i)} className="absolute -top-2 -right-2 w-6 h-6 bg-white border border-zinc-300 rounded-full text-charcoal-light hover:text-brand hover:border-brand text-xs">✕</button>
             </div>

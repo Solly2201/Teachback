@@ -17,7 +17,8 @@ from ..database import get_db
 from ..hmm.model import hmm_available, infer_sequence
 from ..models import Observation, Response, Student, TeachSession, Topic
 from ..nlp.analyzer import analyze_response, merge_session_analyses, targeted_concept_check
-from ..nlp.conversation import MAX_QUESTIONS, build_plan, first_question, play_turn, timeline_out
+from ..nlp.conversation import (MAX_QUESTIONS, _update_relationships, build_plan,
+                                first_question, play_turn, timeline_out)
 from ..recommend.rules import recommend
 from ..states import FEATURE_NAMES, STATE_NAMES
 from .helpers import observation_out, topic_def
@@ -38,6 +39,12 @@ class FinishIn(BaseModel):
     attention: float = Field(ge=0, le=10)
     confidence: float = Field(ge=0, le=10)
     difficulty: float = Field(ge=0, le=10)
+    # the student's own lecture takeaway (optional, never penalised)
+    summary: str = Field(default="", max_length=5000)
+    # fast lecture feedback for the teacher
+    pace: str = Field(default="", max_length=20)
+    feedback_choices: list[str] = Field(default_factory=list)
+    feedback_text: str = Field(default="", max_length=2000)
 
 
 def _progress_out(plan: dict) -> dict:
@@ -74,8 +81,9 @@ def start_session(data: StartIn, db: Session = Depends(get_db)):
         "student": {"id": student.id, "name": student.name},
         "topic": tdef,
         "intro": (
-            f"Let's talk through {topic.name} together — short answers are perfectly fine. "
-            "I'll ask simple questions one at a time and we'll figure out what you understand."
+            f"Let's see what you took away from {topic.name}. You don't need textbook definitions — "
+            "explain things in your own words, and short answers are completely fine. "
+            "I'll ask simple questions one at a time."
         ),
         "prompt": question["text"],
         "question": question,
@@ -149,6 +157,34 @@ def respond(session_id: int, data: RespondIn, db: Session = Depends(get_db)):
     }
 
 
+def _apply_summary_to_plan(plan: dict, analysis: dict) -> tuple[list[str], list[str]]:
+    """Fold the student's own summary into the conversation evidence.
+
+    Upgrade-only: the summary can add or strengthen evidence for a concept or
+    relationship, but it never downgrades what the conversation established —
+    a short summary is never a penalty. Returns (upgraded, mentioned) names.
+    """
+    rank = {"pending": 0, "unclear": 0, "partial": 1, "covered": 2}
+    upgraded, mentioned = [], []
+    for entry in plan.get("concepts", []):
+        res = next(
+            (c for c in analysis.get("concepts", [])
+             if (entry.get("id") is not None and c.get("id") == entry["id"]) or c["name"] == entry["name"]),
+            None,
+        )
+        if res is None or res["status"] == "missing":
+            continue
+        mentioned.append(entry["name"])
+        new_rank = {"covered": 2, "partial": 1}[res["status"]]
+        if new_rank > rank.get(entry["status"], 0):
+            if res["status"] == "covered":
+                upgraded.append(entry["name"])
+            entry["status"] = res["status"]
+    # relationship evidence accumulates the same way it does per turn
+    _update_relationships(plan, analysis)
+    return upgraded, mentioned
+
+
 @router.post("/{session_id}/finish")
 def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
     session = db.get(TeachSession, session_id)
@@ -162,10 +198,48 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         raise HTTPException(503, "HMM model not trained yet - run scripts/build_all.py")
 
     analyses = [r.analysis for r in session.responses]
-    nlp_feats = merge_session_analyses(analyses)
+    tdef = topic_def(session.topic)
     plan = session.plan or {}
+    # deep-copy so SQLAlchemy notices the JSON column change on reassignment
+    plan = {**plan, "concepts": [dict(c) for c in plan.get("concepts", [])],
+            "relationships": [dict(r) for r in plan.get("relationships", [])]}
 
-    detected = sorted({m for a in analyses for m in a.get("detected_misconceptions", [])})
+    # --- the student's own lecture takeaway: another evidence source ---
+    summary_text = (data.summary or "").strip()
+    summary_insights: dict = {}
+    summary_analysis = None
+    if summary_text:
+        summary_analysis = analyze_response(summary_text, tdef)
+        upgraded, mentioned = _apply_summary_to_plan(plan, summary_analysis)
+        summary_insights = {
+            "concepts_mentioned": mentioned,
+            "new_concepts_demonstrated": upgraded,
+            "relationships_demonstrated": [
+                f"{r['source']} → {r['target']}" for r in summary_analysis.get("relationships", [])
+                if r["status"] == "demonstrated"
+            ],
+            "misconceptions": summary_analysis.get("detected_misconceptions", []),
+        }
+    session.plan = plan
+    session.summary_text = summary_text
+    session.summary_insights = summary_insights
+    session.pace = data.pace
+    session.feedback_choices = data.feedback_choices
+    session.feedback_text = data.feedback_text
+
+    nlp_feats = merge_session_analyses(analyses)
+    if summary_analysis is not None:
+        # the summary may only ADD evidence: coverage takes the cumulative
+        # best including the summary; a short summary never lowers features
+        with_summary = merge_session_analyses(analyses + [summary_analysis])
+        nlp_feats["concept_coverage"] = max(nlp_feats["concept_coverage"],
+                                            with_summary["concept_coverage"])
+        nlp_feats["misconception_score"] = max(
+            nlp_feats["misconception_score"],
+            summary_analysis["features"]["misconception_score"])
+
+    detected = sorted({m for a in analyses for m in a.get("detected_misconceptions", [])}
+                      | set(summary_insights.get("misconceptions", [])))
     resolved = sorted(set(plan.get("resolved", [])))
     # unresolved misconceptions count fully against the student; a misconception
     # corrected during the session is attenuated rather than kept at its peak —
@@ -221,8 +295,6 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         o.state_label = STATE_NAMES[int(s_idx)]
     db.commit()
 
-    tdef = topic_def(session.topic)
-
     # concept summary from the conversation plan (falls back to NLP statuses)
     plan_concepts = plan.get("concepts") or []
     if plan_concepts:
@@ -253,6 +325,9 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
     rels_demonstrated = [r for r in relationship_summary if r["status"] == "demonstrated"]
     rels_unclear = [r for r in relationship_summary if r["status"] == "needs_clarification"]
 
+    # confidence/difficulty are separate observations, never a state: they
+    # only steer WHICH activity style is recommended (see recommend/rules.py)
+    understanding_evidence = len(demonstrated) / len(concept_summary) if concept_summary else 0.0
     rec = recommend(
         inference["current_state"], tdef["activities"], unresolved,
         evidence={
@@ -260,6 +335,12 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
             "unclear": needs_clarification
             + [f"the connection {r['source']} → {r['target']}" for r in rels_unclear],
         },
+        signals={
+            "understanding": round(understanding_evidence, 3),
+            "confidence": round(data.confidence / 10.0, 3),
+            "difficulty": round(data.difficulty / 10.0, 3),
+        },
+        topic_def=tdef,
     )
 
     # conceptual evidence bullets stored with the observation, shown on the
@@ -272,6 +353,8 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
     evidence_notes += [f"Connection needing clarification: {r['source']} → {r['target']}" for r in rels_unclear[:2]]
     evidence_notes += [f"Misconception resolved: {m}" for m in resolved]
     evidence_notes += [f"Misconception still open: {m}" for m in unresolved]
+    evidence_notes += [f"Own summary demonstrated: {n}"
+                       for n in summary_insights.get("new_concepts_demonstrated", [])[:2]]
     if features[4] >= 0.6:
         evidence_notes.append("High effort")
     obs.evidence_notes = evidence_notes
@@ -300,4 +383,5 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         },
         "timeline": [observation_out(o) for o in history[-10:]],
         "recommendation": rec,
+        "summary_insights": summary_insights,
     }

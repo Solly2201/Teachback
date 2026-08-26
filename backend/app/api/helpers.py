@@ -8,6 +8,8 @@ def topic_def(topic: Topic) -> dict:
     return {
         "id": topic.id,
         "name": topic.name,
+        "subject_id": topic.subject_id,
+        "subject_name": topic.subject.name if topic.subject else None,
         "description": topic.description,
         "reference_explanation": topic.reference_explanation,
         "opening_prompt": topic.opening_prompt,
@@ -31,7 +33,8 @@ def topic_def(topic: Topic) -> dict:
         ],
         "activities": [
             {"id": a.id, "title": a.title, "description": a.description,
-             "kind": a.kind, "target_state": a.target_state}
+             "kind": a.kind, "target_state": a.target_state,
+             "content": a.content, "question": a.question}
             for a in topic.activities
         ],
     }

@@ -48,13 +48,14 @@ export default function RoleSelect({ onSelect }) {
                 </p>
               </button>
               <button
-                onClick={() => onSelect({ role: 'teacher', name: 'Prof. R. Deshpande', program: 'Computer Engineering' })}
+                onClick={() => onSelect({ role: 'teacher', name: 'Faculty', program: 'Demo teacher access' })}
                 className="card p-8 text-left hover:border-brand hover:shadow-md transition-all group"
               >
                 <div className="text-3xl mb-3">🧑‍🏫</div>
                 <div className="font-bold text-lg text-charcoal group-hover:text-brand">Continue as Teacher</div>
                 <p className="text-sm text-charcoal-light mt-1">
-                  See the class state distribution, misconceptions and manage topics.
+                  Create a TeachBack from your lecture material, review what it picked up, and see
+                  how the class is doing. Pick the demo teacher inside.
                 </p>
               </button>
             </div>

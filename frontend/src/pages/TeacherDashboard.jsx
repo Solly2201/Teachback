@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import StateBadge from '../components/StateBadge.jsx'
+import { TeacherContextBar, useTeacherContext } from '../components/TeacherContext.jsx'
 import { api, STATE_META } from '../services/api.js'
 
 export default function TeacherDashboard() {
+  const context = useTeacherContext()
   const [data, setData] = useState(null)
   const [evaluation, setEvaluation] = useState(null)
   const [error, setError] = useState(null)
@@ -17,10 +20,22 @@ export default function TeacherDashboard() {
 
   const maxCount = Math.max(...data.distribution.map((d) => d.count), 1)
   const maxMiscon = Math.max(...data.common_misconceptions.map((m) => m.count), 1)
+  const subjectName = context.subject?.name
+  const topicFeedback = (data.topic_feedback || []).filter(
+    (f) => !subjectName || f.subject_name === subjectName
+  )
 
   return (
     <div className="space-y-5">
       <div className="banner">Class Overview</div>
+      <TeacherContextBar context={context} />
+      <div className="card p-4 flex items-center justify-between gap-4">
+        <p className="text-sm text-charcoal-light">
+          After a lecture, create a TeachBack from your material — the system drafts the concepts,
+          you review them, students explain what they understood.
+        </p>
+        <Link to="/lectures" className="btn-primary whitespace-nowrap">+ Create Lecture TeachBack</Link>
+      </div>
 
       <div className="grid sm:grid-cols-3 gap-4">
         <div className="card p-5 text-center">
@@ -124,6 +139,58 @@ export default function TeacherDashboard() {
           </div>
         </div>
       </div>
+
+      {/* lecture feedback */}
+      {topicFeedback.length > 0 && (
+        <div className="card">
+          <div className="card-header">Lecture feedback from students</div>
+          <div className="p-4 grid md:grid-cols-2 gap-4">
+            {topicFeedback.map((f) => {
+              const paceTotal = f.pace.reduce((n, p) => n + p.count, 0) || 1
+              return (
+                <div key={f.id} className="border border-zinc-200 rounded-md p-4">
+                  <div className="font-semibold text-sm text-charcoal">{f.name}</div>
+                  <div className="text-xs text-charcoal-light mt-0.5">{f.responses} feedback response{f.responses === 1 ? '' : 's'}</div>
+                  <div className="flex gap-6 mt-3 text-sm">
+                    {f.avg_confidence != null && (
+                      <div><span className="font-bold text-charcoal tabular-nums">{f.avg_confidence}</span><span className="text-charcoal-light">/10 confidence</span></div>
+                    )}
+                    {f.avg_difficulty != null && (
+                      <div><span className="font-bold text-charcoal tabular-nums">{f.avg_difficulty}</span><span className="text-charcoal-light">/10 difficulty</span></div>
+                    )}
+                  </div>
+                  {f.pace.length > 0 && (
+                    <div className="mt-3 space-y-1">
+                      {f.pace.map((p) => (
+                        <div key={p.label} className="flex items-center gap-2 text-xs">
+                          <span className="w-24 text-charcoal-light">{p.label}</span>
+                          <div className="flex-1 h-2.5 bg-zinc-100 rounded overflow-hidden">
+                            <div className="h-full bg-brand rounded-r" style={{ width: `${(p.count / paceTotal) * 100}%` }} />
+                          </div>
+                          <span className="w-10 text-right tabular-nums text-charcoal">{Math.round((p.count / paceTotal) * 100)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {f.common_requests.length > 0 && (
+                    <div className="mt-3 text-xs text-charcoal-light">
+                      <span className="font-semibold text-charcoal">Common requests:</span>{' '}
+                      {f.common_requests.map((c) => c.label).join(' · ')}
+                    </div>
+                  )}
+                  {f.recent_comments.length > 0 && (
+                    <ul className="mt-2 space-y-0.5">
+                      {f.recent_comments.map((c, i) => (
+                        <li key={i} className="text-xs text-charcoal-light italic">“{c}”</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* topic stats */}
       <div className="card">

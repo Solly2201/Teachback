@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import students, teachback, teacher, topics
+from .api import activities, lectures, students, teachback, teacher, topics
 from .seed import seed_db
 
 app = FastAPI(title="TeachBack", version="1.0.0",
@@ -18,6 +18,8 @@ app.include_router(students.router)
 app.include_router(topics.router)
 app.include_router(teachback.router)
 app.include_router(teacher.router)
+app.include_router(activities.router)
+app.include_router(lectures.router)
 
 
 @app.on_event("startup")

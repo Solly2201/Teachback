@@ -73,6 +73,49 @@ export default function Progress({ user }) {
         </div>
       </div>
 
+      {data.summaries?.length > 0 && (
+        <div className="card">
+          <div className="card-header">Your lecture takeaways</div>
+          <div className="divide-y divide-zinc-100">
+            {data.summaries.map((s, i) => (
+              <div key={i} className="p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-charcoal">{s.topic_name || 'Session'}</div>
+                  <span className="text-xs text-charcoal-light whitespace-nowrap">
+                    {s.created_at ? new Date(s.created_at).toLocaleDateString() : ''}
+                  </span>
+                </div>
+                <p className="text-sm text-charcoal-light mt-1 italic">“{s.text}”</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.completions?.length > 0 && (
+        <div className="card">
+          <div className="card-header">Completed activities</div>
+          <div className="divide-y divide-zinc-100">
+            {data.completions.map((c) => (
+              <div key={c.id} className="p-3.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-emerald-600">✓</span>
+                  <div>
+                    <div className="text-sm font-medium text-charcoal">{c.title}</div>
+                    <div className="text-xs text-charcoal-light">
+                      {(c.kind || '').replace('_', ' ')}{c.topic_name ? ` · ${c.topic_name}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xs text-charcoal-light whitespace-nowrap">
+                  {c.created_at ? new Date(c.created_at).toLocaleDateString() : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <div className="card-header">Session history</div>
         <div className="overflow-x-auto">

@@ -49,6 +49,11 @@ function ConceptTimeline({ timeline, conceptNo, totalConcepts, questionNo }) {
   )
 }
 
+const PACE_OPTIONS = ['Too slow', 'A little slow', 'About right', 'A little fast', 'Too fast']
+const FEEDBACK_CHIPS = ['More examples', 'Slower explanation', 'Faster pace', 'More practice',
+  'More visuals', 'More real-world examples', 'More time for questions', 'Less repetition',
+  'More challenging material']
+
 export default function TeachBack({ user }) {
   const [topics, setTopics] = useState(null)
   const [session, setSession] = useState(null)
@@ -57,7 +62,12 @@ export default function TeachBack({ user }) {
   const [text, setText] = useState('')
   const [misconceptions, setMisconceptions] = useState([]) // {name, resolved}
   const [awaitingReport, setAwaitingReport] = useState(false)
+  const [wrapPhase, setWrapPhase] = useState('summary') // summary -> feedback
+  const [summary, setSummary] = useState('')
   const [report, setReport] = useState({ attention: 7, confidence: 5, difficulty: 5 })
+  const [pace, setPace] = useState('About right')
+  const [chips, setChips] = useState([])
+  const [feedbackText, setFeedbackText] = useState('')
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -88,6 +98,11 @@ export default function TeachBack({ user }) {
       setMisconceptions([])
       setResult(null)
       setAwaitingReport(false)
+      setWrapPhase('summary')
+      setSummary('')
+      setPace('About right')
+      setChips([])
+      setFeedbackText('')
     } catch (e) {
       setError(e.message)
     } finally {
@@ -137,7 +152,13 @@ export default function TeachBack({ user }) {
     setBusy(true)
     setError(null)
     try {
-      const r = await api.finish(session.session_id, report)
+      const r = await api.finish(session.session_id, {
+        ...report,
+        summary: summary.trim(),
+        pace,
+        feedback_choices: chips,
+        feedback_text: feedbackText.trim(),
+      })
       setResult(r)
       setAwaitingReport(false)
     } catch (e) {
@@ -158,32 +179,43 @@ export default function TeachBack({ user }) {
 
   /* ---------- topic selection ---------- */
   if (!session) {
+    const bySubject = new Map()
+    for (const t of topics || []) {
+      const key = t.subject_name || 'Other topics'
+      if (!bySubject.has(key)) bySubject.set(key, [])
+      bySubject.get(key).push(t)
+    }
     return (
       <div className="space-y-5">
-        <div className="banner">TeachBack — Choose a Topic</div>
+        <div className="banner">TeachBack — What did you take away from the lecture?</div>
         {error && <div className="card p-4 text-sm text-red-700 bg-red-50 border-red-200">{error}</div>}
         <p className="text-sm text-charcoal-light">
-          Pick a topic you have studied. We&apos;ll have a <strong>short conversation</strong> about it —
-          simple questions, one at a time. Most answers only need <strong>one or two sentences</strong>;
-          the system adapts its follow-up questions to what you say.
+          Pick the lecture/topic you want to explain. You don&apos;t need textbook definitions —
+          <strong> your own words are exactly what we want</strong>. It&apos;s a short conversation,
+          not an exam: simple questions, one at a time, and most answers only need one or two sentences.
         </p>
-        <div className="grid md:grid-cols-3 gap-4">
-          {!topics && <div className="text-charcoal-light text-sm">Loading topics…</div>}
-          {topics?.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => start(t.id)}
-              disabled={busy}
-              className="card p-5 text-left hover:border-brand hover:shadow-md transition-all group"
-            >
-              <div className="font-bold text-charcoal group-hover:text-brand">{t.name}</div>
-              <p className="text-sm text-charcoal-light mt-1.5 line-clamp-2">{t.description}</p>
-              <div className="text-xs text-charcoal-light mt-3">
-                {t.concept_count} concepts · about {t.concept_count}–{t.concept_count * 2} short questions
-              </div>
-            </button>
-          ))}
-        </div>
+        {!topics && <div className="text-charcoal-light text-sm">Loading topics…</div>}
+        {[...bySubject.entries()].map(([subjectName, list]) => (
+          <div key={subjectName}>
+            <div className="text-xs font-bold uppercase tracking-wide text-charcoal-light mb-2">{subjectName}</div>
+            <div className="grid md:grid-cols-3 gap-4">
+              {list.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => start(t.id)}
+                  disabled={busy}
+                  className="card p-5 text-left hover:border-brand hover:shadow-md transition-all group"
+                >
+                  <div className="font-bold text-charcoal group-hover:text-brand">{t.name}</div>
+                  <p className="text-sm text-charcoal-light mt-1.5 line-clamp-2">{t.description}</p>
+                  <div className="text-xs text-charcoal-light mt-3">
+                    {t.concept_count} concepts · short conversational questions
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
@@ -199,7 +231,7 @@ export default function TeachBack({ user }) {
         <div className="banner">Session Complete — {session.topic.name}</div>
 
         <div className="card">
-          <div className="card-header">Current learning state</div>
+          <div className="card-header">Current learning condition</div>
           <div className="p-5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
               <StateBadge label={result.state.label} size="lg" />
@@ -256,6 +288,14 @@ export default function TeachBack({ user }) {
                   <span className="text-charcoal">Cleared up: <em>{m}</em></span>
                 </li>
               ))}
+              {result.summary_insights?.new_concepts_demonstrated?.length > 0 && (
+                <li className="pt-2 mt-1 border-t border-zinc-100 text-xs text-charcoal-light">
+                  Your takeaway summary added evidence for:{' '}
+                  <span className="text-charcoal font-medium">
+                    {result.summary_insights.new_concepts_demonstrated.join(', ')}
+                  </span>
+                </li>
+              )}
             </ul>
           </div>
           <div className="card">
@@ -320,11 +360,21 @@ export default function TeachBack({ user }) {
             {result.recommendation.notes?.map((n, i) => (
               <div key={i} className="mt-3 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-2">{n}</div>
             ))}
+            <Link
+              to="/activity"
+              state={{
+                activity: { ...result.recommendation.activity, topic_id: session.topic.id, topic_name: session.topic.name },
+                why: result.recommendation.why,
+              }}
+              className="btn-primary inline-block mt-4"
+            >
+              Start Activity →
+            </Link>
           </div>
         </div>
 
         <div className="flex gap-3">
-          <button onClick={reset} className="btn-primary">Start next activity — new topic</button>
+          <button onClick={reset} className="btn-secondary">Teach another topic</button>
           <Link to="/progress" className="btn-secondary">View my progress</Link>
         </div>
       </div>
@@ -386,29 +436,95 @@ export default function TeachBack({ user }) {
           </div>
 
           {awaitingReport ? (
-            <div className="border-t border-zinc-200 p-4 space-y-4">
-              <div className="text-sm font-semibold text-charcoal">Last step — how did this session feel?</div>
-              {[
-                ['attention', 'How focused were you this session?'],
-                ['confidence', 'How confident do you feel about this topic now?'],
-                ['difficulty', 'How difficult did this topic feel?'],
-              ].map(([key, label]) => (
-                <div key={key}>
-                  <div className="flex justify-between text-xs text-charcoal-light mb-1">
-                    <span>{label}</span>
-                    <span className="font-bold text-charcoal tabular-nums">{report[key]}/10</span>
+            wrapPhase === 'summary' ? (
+              <div className="border-t border-zinc-200 p-4 space-y-3">
+                <div className="text-sm font-semibold text-charcoal">Your takeaway</div>
+                <p className="text-xs text-charcoal-light">
+                  In your own words, what did you learn from this lecture? A few sentences about what you
+                  understood, what stood out, or how the ideas connect. This is your personal summary — not
+                  an exam answer — and a short one is completely fine.
+                </p>
+                <textarea
+                  className="input min-h-[110px] resize-y"
+                  placeholder="What I took away from this lecture is…"
+                  value={summary}
+                  onChange={(e) => setSummary(e.target.value)}
+                />
+                <div className="flex items-center justify-between">
+                  <button onClick={() => setWrapPhase('feedback')} className="text-xs text-charcoal-light hover:text-brand font-semibold uppercase tracking-wide">
+                    Skip
+                  </button>
+                  <button onClick={() => setWrapPhase('feedback')} className="btn-primary">
+                    Submit summary →
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="border-t border-zinc-200 p-4 space-y-4">
+                <div className="text-sm font-semibold text-charcoal">Last step — quick lecture feedback (under a minute)</div>
+                <div>
+                  <div className="text-xs text-charcoal-light mb-1.5">How did the lecture&apos;s pace feel?</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PACE_OPTIONS.map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setPace(p)}
+                        className={`text-xs px-2.5 py-1.5 rounded border font-semibold transition-colors ${
+                          pace === p ? 'bg-brand text-white border-brand' : 'bg-white text-charcoal-light border-zinc-300 hover:border-brand hover:text-brand'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {[
+                  ['attention', 'How focused were you this session?'],
+                  ['confidence', 'How confident do you feel about this material now?'],
+                  ['difficulty', 'How difficult did this lecture feel?'],
+                ].map(([key, label]) => (
+                  <div key={key}>
+                    <div className="flex justify-between text-xs text-charcoal-light mb-1">
+                      <span>{label}</span>
+                      <span className="font-bold text-charcoal tabular-nums">{report[key]}/10</span>
+                    </div>
+                    <input
+                      type="range" min="0" max="10" step="1" value={report[key]}
+                      onChange={(e) => setReport((r) => ({ ...r, [key]: Number(e.target.value) }))}
+                      className="w-full accent-[#A5231B]"
+                    />
+                  </div>
+                ))}
+                <div>
+                  <div className="text-xs text-charcoal-light mb-1.5">What could make this lecture better for you? (optional)</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {FEEDBACK_CHIPS.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => setChips((cs) => (cs.includes(c) ? cs.filter((x) => x !== c) : [...cs, c]))}
+                        className={`text-xs px-2.5 py-1.5 rounded border transition-colors ${
+                          chips.includes(c) ? 'bg-brand text-white border-brand' : 'bg-white text-charcoal-light border-zinc-300 hover:border-brand hover:text-brand'
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    ))}
                   </div>
                   <input
-                    type="range" min="0" max="10" step="1" value={report[key]}
-                    onChange={(e) => setReport((r) => ({ ...r, [key]: Number(e.target.value) }))}
-                    className="w-full accent-[#A5231B]"
+                    className="input mt-2"
+                    placeholder="Anything else you want your teacher to know? (optional)"
+                    value={feedbackText}
+                    onChange={(e) => setFeedbackText(e.target.value)}
                   />
                 </div>
-              ))}
-              <button onClick={finish} disabled={busy} className="btn-primary w-full">
-                {busy ? 'Estimating your learning state…' : 'See my session summary'}
-              </button>
-            </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setWrapPhase('summary')} className="btn-secondary">← Back</button>
+                  <button onClick={finish} disabled={busy} className="btn-primary flex-1">
+                    {busy ? 'Estimating your learning state…' : 'See my session summary'}
+                  </button>
+                </div>
+              </div>
+            )
           ) : (
             <div className="border-t border-zinc-200 p-4">
               <textarea

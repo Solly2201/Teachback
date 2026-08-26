@@ -6,6 +6,30 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
+class Teacher(Base):
+    """A demo faculty account. No authentication — the UI has a simple
+    teacher/subject context switcher instead."""
+
+    __tablename__ = "teachers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+
+    subjects: Mapped[list["Subject"]] = relationship(back_populates="teacher")
+
+
+class Subject(Base):
+    """A subject taught by one teacher; topics and lectures hang off it."""
+
+    __tablename__ = "subjects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(150))
+    teacher_id: Mapped[int] = mapped_column(ForeignKey("teachers.id"))
+
+    teacher: Mapped["Teacher"] = relationship(back_populates="subjects")
+
+
 class Student(Base):
     __tablename__ = "students"
 
@@ -23,6 +47,7 @@ class Topic(Base):
     __tablename__ = "topics"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(150))
     description: Mapped[str] = mapped_column(Text, default="")
     # Short "model answer" used for the semantic correctness feature.
@@ -42,6 +67,38 @@ class Topic(Base):
     activities: Mapped[list["Activity"]] = relationship(
         back_populates="topic", cascade="all, delete-orphan"
     )
+    subject: Mapped["Subject"] = relationship()
+
+
+class Lecture(Base):
+    """One lecture prepared for TeachBack (the quick faculty workflow).
+
+    The teacher provides material text (pasted or extracted from a file);
+    the NLP preparation step stores its candidate concepts/relationships/
+    objectives in `draft` for the teacher to review and edit. Publishing
+    ("Start TeachBack") builds/updates the linked Topic — the same knowledge
+    structure the detailed Topic Management workflow edits.
+    """
+
+    __tablename__ = "lectures"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"))
+    topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    material_text: Mapped[str] = mapped_column(Text, default="")
+    objectives: Mapped[list] = mapped_column(JSON, default=list)
+    # reviewed knowledge draft: {"concepts": [...], "relationships": [...],
+    # "misconceptions": [...]} — edited in place by the teacher before publish
+    draft: Mapped[dict] = mapped_column(JSON, default=dict)
+    # untouched NLP suggestions, kept so the review step can show provenance
+    suggestions: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft | published
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    subject: Mapped["Subject"] = relationship()
+    topic: Mapped["Topic"] = relationship()
 
 
 class Concept(Base):
@@ -110,8 +167,35 @@ class Activity(Base):
     kind: Mapped[str] = mapped_column(String(50), default="practice")
     # Which learning state this activity is meant for (state key, e.g. "unclear").
     target_state: Mapped[str] = mapped_column(String(30), default="understanding")
+    # The material the student actually reads/uses when doing the activity,
+    # and the short task/question they answer to complete it.
+    content: Mapped[str] = mapped_column(Text, default="")
+    question: Mapped[str] = mapped_column(Text, default="")
 
     topic: Mapped["Topic"] = relationship(back_populates="activities")
+
+
+class ActivityCompletion(Base):
+    """A student's record of completing a recommended activity.
+
+    activity_id is null when the completed activity was a generic fallback
+    (no stored Activity row); the title/kind snapshot keeps the record
+    readable either way.
+    """
+
+    __tablename__ = "activity_completions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"))
+    activity_id: Mapped[int] = mapped_column(ForeignKey("activities.id"), nullable=True)
+    topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    kind: Mapped[str] = mapped_column(String(50), default="")
+    answer: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    student: Mapped["Student"] = relationship()
+    topic: Mapped["Topic"] = relationship()
 
 
 class TeachSession(Base):
@@ -125,6 +209,14 @@ class TeachSession(Base):
     exchange_count: Mapped[int] = mapped_column(Integer, default=0)
     # State of the guided concept-by-concept conversation (see nlp/conversation.py).
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
+    # The student's own end-of-session lecture takeaway, plus what the NLP
+    # analysis of it added (upgrade-only evidence, see api/teachback.py).
+    summary_text: Mapped[str] = mapped_column(Text, default="")
+    summary_insights: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Fast lecture feedback: pace choice, selected request chips, free text.
+    pace: Mapped[str] = mapped_column(String(20), default="")
+    feedback_choices: Mapped[list] = mapped_column(JSON, default=list)
+    feedback_text: Mapped[str] = mapped_column(Text, default="")
 
     student: Mapped["Student"] = relationship(back_populates="sessions")
     topic: Mapped["Topic"] = relationship()

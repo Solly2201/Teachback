@@ -13,9 +13,10 @@ from datetime import datetime, timedelta
 from .database import Base, SessionLocal, engine
 from .hmm.model import hmm_available, infer_sequence
 from .hmm.synthetic import generate_dataset
-from .models import (Activity, Concept, ConceptRelationship, Misconception,
-                     Observation, Response, Student, TeachSession, Topic)
-from .seed_content import DEMO_STUDENTS, TOPICS
+from .models import (Activity, ActivityCompletion, Concept, ConceptRelationship,
+                     Lecture, Misconception, Observation, Response, Student, Subject,
+                     TeachSession, Teacher, Topic)
+from .seed_content import DEMO_STUDENTS, PYTHON_LECTURE, TEACHERS, TOPIC_SUBJECT, TOPICS
 from .states import STATE_NAMES
 
 
@@ -33,6 +34,14 @@ def _migrate():
         ("teach_sessions", "plan", "JSON"),
         ("observations", "evidence_notes", "JSON"),
         ("students", "roll_no", "VARCHAR(20) DEFAULT ''"),
+        ("activities", "content", "TEXT DEFAULT ''"),
+        ("activities", "question", "TEXT DEFAULT ''"),
+        ("topics", "subject_id", "INTEGER"),
+        ("teach_sessions", "summary_text", "TEXT DEFAULT ''"),
+        ("teach_sessions", "summary_insights", "JSON"),
+        ("teach_sessions", "pace", "VARCHAR(20) DEFAULT ''"),
+        ("teach_sessions", "feedback_choices", "JSON"),
+        ("teach_sessions", "feedback_text", "TEXT DEFAULT ''"),
     ]
     with engine.connect() as conn:
         for table, col, ddl in additions:
@@ -49,8 +58,9 @@ def seed_db(force: bool = False) -> bool:
         if db.query(Topic).count() > 0 and not force:
             return False
         if force:
-            for model in (Observation, Response, TeachSession, Activity,
-                          Misconception, ConceptRelationship, Concept, Student, Topic):
+            for model in (ActivityCompletion, Observation, Response, TeachSession, Activity,
+                          Misconception, ConceptRelationship, Concept, Lecture, Student,
+                          Topic, Subject, Teacher):
                 db.query(model).delete()
             db.commit()
 
@@ -87,7 +97,8 @@ def seed_db(force: bool = False) -> bool:
             for a in t["activities"]:
                 topic.activities.append(
                     Activity(title=a["title"], description=a["description"],
-                             kind=a["kind"], target_state=a["target_state"])
+                             kind=a["kind"], target_state=a["target_state"],
+                             content=a.get("content", ""), question=a.get("question", ""))
                 )
             db.add(topic)
             topics.append(topic)
@@ -141,6 +152,75 @@ def seed_db(force: bool = False) -> bool:
                     )
                 )
         db.commit()
+
+        # --- teachers, subjects, and the sample lecture workflow ---
+        for tdata in TEACHERS:
+            teacher = Teacher(name=tdata["name"])
+            db.add(teacher)
+            db.flush()
+            for sname in tdata["subjects"]:
+                db.add(Subject(name=sname, teacher_id=teacher.id))
+        db.commit()
+        subjects = {s.name: s for s in db.query(Subject).all()}
+
+        # existing topics belong to the first teacher's subject
+        nn_subject = subjects.get(TOPIC_SUBJECT)
+        if nn_subject:
+            for topic in topics:
+                topic.subject_id = nn_subject.id
+            db.commit()
+
+        _seed_python_lecture(db, subjects.get(PYTHON_LECTURE["subject"]))
+        db.commit()
         return True
     finally:
         db.close()
+
+
+def _seed_python_lecture(db, subject) -> None:
+    """Run the sample Python lecture through the REAL lecture pipeline.
+
+    Material -> NLP preparation (suggestions stored verbatim) -> the curated
+    review from seed_content playing the teacher's quick-edit step -> publish
+    into a Topic via the same code path the API uses. Nothing is bypassed and
+    nothing is topic-specific.
+    """
+    if subject is None:
+        return
+    from .api.lectures import apply_draft_to_topic
+    from .nlp.lecture_prep import prepare_lecture
+
+    lec_def = PYTHON_LECTURE
+    prep = prepare_lecture(
+        lec_def["material"], title=lec_def["title"], description=lec_def["description"],
+        objectives=lec_def["objectives"],
+        known_misconceptions=[
+            {"name": m.name, "description": m.description, "clarification": m.clarification,
+             "probe_question": m.probe_question}
+            for m in db.query(Misconception).all()
+        ],
+    )
+    lecture = Lecture(
+        subject_id=subject.id,
+        title=lec_def["title"],
+        description=lec_def["description"],
+        material_text=lec_def["material"],
+        objectives=lec_def["objectives"],
+        suggestions=prep,
+        # the teacher's review: curated concepts/relationships/misconceptions
+        draft={
+            "concepts": lec_def["reviewed_concepts"],
+            "relationships": lec_def["reviewed_relationships"],
+            "misconceptions": lec_def["reviewed_misconceptions"],
+        },
+        status="draft",
+    )
+    db.add(lecture)
+    db.flush()
+
+    topic = Topic()
+    db.add(topic)
+    apply_draft_to_topic(topic, lecture)
+    db.flush()
+    lecture.topic_id = topic.id
+    lecture.status = "published"

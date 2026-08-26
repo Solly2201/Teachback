@@ -135,6 +135,90 @@ def test_multi_turn_evidence_accumulates():
     assert rel_status[("Gradient", "Weight")] == "demonstrated"
 
 
+# K. A one-word "yes" to a yes/no-phrased question is positive evidence, not
+# full credit: the tutor asks for the idea in the student's own words.
+def test_short_yes_gets_deeper_followup_not_credit():
+    plan = build_plan(BACKPROP)
+    plan["current"] = 1  # Gradient
+    plan["concepts"][0]["status"] = "covered"
+    plan["asked_kind"] = "easier"  # "Does the gradient tell us how the loss changes when we nudge a weight?"
+    analysis = analyze_response("yes", BACKPROP)
+    analysis["target_check"] = targeted_concept_check("yes", GRADIENT)
+    plan, turn = play_turn(plan, analysis, BACKPROP)
+    assert turn["followup"]["kind"] == "deepen"
+    assert "own words" in turn["followup"]["text"]
+    assert plan["concepts"][1]["status"] == "pending"  # no credit yet
+
+
+# L. "yes" followed by a real explanation earns the concept
+def test_yes_then_explanation_earns_credit():
+    plan = build_plan(BACKPROP)
+    plan["current"] = 1
+    plan["concepts"][0]["status"] = "covered"
+    plan["asked_kind"] = "easier"
+    analysis = analyze_response("yes", BACKPROP)
+    analysis["target_check"] = targeted_concept_check("yes", GRADIENT)
+    plan, turn = play_turn(plan, analysis, BACKPROP)
+    assert turn["followup"]["kind"] == "deepen"
+    text = "It tells us how much the loss changes when we change a weight."
+    followup = analyze_response(text, BACKPROP)
+    followup["target_check"] = targeted_concept_check(text, GRADIENT)
+    plan, _ = play_turn(plan, followup, BACKPROP)
+    assert plan["concepts"][1]["status"] == "covered"
+
+
+# M. "yes" twice keeps the confirmation as partial evidence, not "I don't know"
+def test_yes_twice_counts_as_partial_not_unclear():
+    plan = build_plan(BACKPROP)
+    plan["current"] = 1
+    plan["concepts"][0]["status"] = "covered"
+    plan["asked_kind"] = "easier"
+    for _ in range(2):
+        analysis = analyze_response("yes", BACKPROP)
+        analysis["target_check"] = targeted_concept_check("yes", GRADIENT)
+        plan, turn = play_turn(plan, analysis, BACKPROP)
+    assert plan["concepts"][1]["status"] == "partial"
+
+
+# N. "yes" to an open (non yes/no) question is NOT treated as evidence
+def test_yes_to_open_question_not_treated_as_evidence():
+    plan = build_plan(BACKPROP)
+    plan["current"] = 1
+    plan["concepts"][0]["status"] = "covered"
+    plan["asked_kind"] = "main"  # "What does a gradient tell us?"
+    analysis = analyze_response("yes", BACKPROP)
+    analysis["target_check"] = targeted_concept_check("yes", GRADIENT)
+    plan, turn = play_turn(plan, analysis, BACKPROP)
+    assert turn["followup"]["kind"] == "easier"
+
+
+# O. "I don't know" to a yes/no question is still a give-up, never an affirmation
+def test_i_dont_know_to_confirm_question_still_unclear():
+    plan = build_plan(BACKPROP)
+    plan["current"] = 1
+    plan["concepts"][0]["status"] = "covered"
+    plan["asked_kind"] = "easier"
+    analysis = analyze_response("I don't know", BACKPROP)
+    analysis["target_check"] = targeted_concept_check("I don't know", GRADIENT)
+    plan, turn = play_turn(plan, analysis, BACKPROP)
+    assert turn["followup"]["kind"] == "easier"
+
+
+# P. A short but meaningful answer counts as conceptual evidence, not unclear:
+# it is either accepted or probed further — never dropped as "unclear".
+def test_short_meaningful_answer_is_evidence_not_unclear():
+    loss = BACKPROP["concepts"][0]  # "When a network makes a prediction, how do we know how wrong it was?"
+    entry = {"id": None, "name": loss["name"], "status": "pending", "attempts": 0}
+    text = "By checking the error between the prediction and the actual result."
+    analysis = analyze_response(text, BACKPROP)
+    analysis["target_check"] = targeted_concept_check(text, loss)
+    assert _verdict(analysis, entry) in ("correct", "partial")
+    plan = build_plan(BACKPROP)
+    plan, turn = play_turn(plan, analysis, BACKPROP)
+    # acknowledged and advanced, or acknowledged and probed — never the easier question
+    assert turn["followup"]["kind"] in ("main", "probe", "relationship")
+
+
 # Relationship gaps get targeted follow-up questions once concepts are done
 def test_relationship_gap_gets_probed():
     plan = build_plan(BACKPROP)

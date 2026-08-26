@@ -118,15 +118,37 @@ TOPICS = [
         ],
         "activities": [
             {"target_state": "not_trying", "kind": "re_engagement", "title": "One-line warm-up",
-             "description": "Answer in one sentence: what is a neural network trying to minimise during training?"},
+             "description": "Answer in one sentence: what is a neural network trying to minimise during training?",
+             "content": ("Training a neural network is a loop: the network makes a guess, we measure how wrong "
+                         "the guess was, and the weights are nudged so the next guess is a little better."),
+             "question": "In one sentence: what is a neural network trying to minimise during training?"},
             {"target_state": "unclear", "kind": "concept_review", "title": "Hiker-on-a-hill analogy",
-             "description": "Read the 'hiker descending a foggy hill' analogy for gradients, then answer: what does the slope of the hill represent?"},
+             "description": "Read the 'hiker descending a foggy hill' analogy for gradients, then answer: what does the slope of the hill represent?",
+             "content": ("Imagine you are hiking down a foggy hill. The hill is the loss landscape: your position "
+                         "is the current set of weights, and your height is the loss. You cannot see the whole "
+                         "hill — but at every step you can feel the slope under your feet, and stepping downhill "
+                         "lowers your height a little."),
+             "question": "What does the slope of the hill represent?"},
             {"target_state": "struggling", "kind": "guided_practice", "title": "Guided chain-rule walkthrough",
-             "description": "Step through backpropagation on a 2-layer network with 1 weight per layer, computing each derivative with hints."},
+             "description": "Step through backpropagation on a 2-layer network with 1 weight per layer, computing each derivative with hints.",
+             "content": ("Take a tiny network: input x → weight w1 → hidden value h → weight w2 → output y, with "
+                         "loss L = (y − target)². To find how L changes when w1 changes, multiply the small "
+                         "effects along the path: how L changes with y, how y changes with h, and how h changes "
+                         "with w1. That chain of multiplications is the chain rule — and it is exactly what "
+                         "backpropagation does layer by layer."),
+             "question": "Why do we multiply the derivatives along the path instead of adding them?"},
             {"target_state": "understanding", "kind": "application", "title": "Learning-rate experiment",
-             "description": "Predict what happens to training when the learning rate is 10x too large, then check your prediction against provided loss curves."},
+             "description": "Predict what happens to training when the learning rate is 10x too large, then check your prediction against provided loss curves.",
+             "content": ("The learning rate scales every weight update. With a sensible learning rate the loss "
+                         "falls smoothly over training. Now imagine the learning rate is 10× too large: every "
+                         "update massively overshoots the downhill direction."),
+             "question": "Predict what the loss curve would look like with a 10× too-large learning rate, and explain why."},
             {"target_state": "confident", "kind": "challenge", "title": "Vanishing gradients edge case",
-             "description": "Explain why gradients can vanish in deep sigmoid networks and propose two mitigations. Then teach backpropagation to a classmate."},
+             "description": "Explain why gradients can vanish in deep sigmoid networks and propose two mitigations. Then teach backpropagation to a classmate.",
+             "content": ("In a deep network of sigmoid layers, each layer's derivative is at most 0.25. "
+                         "Backpropagation multiplies these derivatives layer after layer, so the error signal "
+                         "reaching the earliest layers can shrink towards zero."),
+             "question": "Why does multiplying many small derivatives make early layers stop learning, and what is one way to mitigate it?"},
         ],
     },
     {
@@ -229,15 +251,34 @@ TOPICS = [
         ],
         "activities": [
             {"target_state": "not_trying", "kind": "re_engagement", "title": "One-line warm-up",
-             "description": "Answer in one sentence: what is the difference between memorising and learning?"},
+             "description": "Answer in one sentence: what is the difference between memorising and learning?",
+             "content": ("A model can do well on its homework (the training data) yet fail the exam (new data). "
+                         "The whole point of training is doing well on data the model has never seen."),
+             "question": "In one sentence: what is the difference between memorising and learning?"},
             {"target_state": "unclear", "kind": "concept_review", "title": "Exam-cramming analogy",
-             "description": "Read the analogy of a student memorising past papers vs understanding the subject, then map each part to model training."},
+             "description": "Read the analogy of a student memorising past papers vs understanding the subject, then map each part to model training.",
+             "content": ("A student memorises the answers to last year's exam papers. On those exact papers they "
+                         "score 100% — but on a new exam with fresh questions they do badly, because they never "
+                         "learned the subject. An overfit model is that student: excellent on the training data, "
+                         "poor on new data."),
+             "question": "In this analogy, what do the past papers and the new exam correspond to in model training?"},
             {"target_state": "struggling", "kind": "guided_practice", "title": "Guided curve reading",
-             "description": "Given three pairs of training/validation loss curves, decide with hints which show overfitting, underfitting, or a good fit."},
+             "description": "Given three pairs of training/validation loss curves, decide with hints which show overfitting, underfitting, or a good fit.",
+             "content": ("Picture three pairs of training/validation loss curves. (1) Both fall together and "
+                         "level out close to each other. (2) Training loss keeps falling while validation loss "
+                         "falls at first, then rises again. (3) Both stay high and flat."),
+             "question": "Which of the three cases shows overfitting, and what is the tell-tale sign?"},
             {"target_state": "understanding", "kind": "application", "title": "Pick the fix",
-             "description": "For four described scenarios (small data, huge model, noisy labels, long training), choose the most suitable regularization strategy and justify it."},
+             "description": "For four described scenarios (small data, huge model, noisy labels, long training), choose the most suitable regularization strategy and justify it.",
+             "content": ("Scenario: a very large neural network is trained on a very small dataset. Training "
+                         "accuracy reaches 99%, but validation accuracy is only 61%."),
+             "question": "Which regularization strategy would you try first here, and why does it fit this scenario?"},
             {"target_state": "confident", "kind": "challenge", "title": "Double descent teaser",
-             "description": "Research the 'double descent' phenomenon and explain how it complicates the classic overfitting story. Teach your summary to a classmate."},
+             "description": "Research the 'double descent' phenomenon and explain how it complicates the classic overfitting story. Teach your summary to a classmate.",
+             "content": ("Classic theory says test error falls, then rises as models get bigger — overfitting. "
+                         "Yet very large models sometimes show 'double descent': test error rises and then falls "
+                         "AGAIN as model capacity keeps growing."),
+             "question": "How does double descent complicate the classic overfitting story?"},
         ],
     },
     {
@@ -340,18 +381,101 @@ TOPICS = [
         ],
         "activities": [
             {"target_state": "not_trying", "kind": "re_engagement", "title": "One-line warm-up",
-             "description": "Answer in one sentence: give one everyday example of something you infer without seeing it directly."},
+             "description": "Answer in one sentence: give one everyday example of something you infer without seeing it directly.",
+             "content": ("We constantly infer things we cannot see directly — a friend's mood from their "
+                         "messages, or the weather outside from what people in the corridor are wearing."),
+             "question": "Give one everyday example of something you infer without observing it directly."},
             {"target_state": "unclear", "kind": "concept_review", "title": "Weather-and-umbrella analogy",
-             "description": "Read the classic example of inferring weather (hidden) from whether people carry umbrellas (observed), then label states vs observations."},
+             "description": "Read the classic example of inferring weather (hidden) from whether people carry umbrellas (observed), then label states vs observations.",
+             "content": ("You work in a windowless office. You cannot see the weather, but you can see whether "
+                         "colleagues walk in carrying umbrellas. Rainy days make umbrellas likely; sunny days "
+                         "make them rare. From a week of umbrella sightings you can infer the likely sequence "
+                         "of weather outside."),
+             "question": "In this example, which part is the hidden state and which part is the observation?"},
             {"target_state": "struggling", "kind": "guided_practice", "title": "Guided 2-state walkthrough",
-             "description": "Hand-compute one step of state inference on a 2-state HMM with given transition and emission tables, with hints."},
+             "description": "Hand-compute one step of state inference on a 2-state HMM with given transition and emission tables, with hints.",
+             "content": ("Two states: Rainy and Sunny. Rain tends to persist (P(rain→rain)=0.7), sun too "
+                         "(P(sun→sun)=0.8). On a rainy day an umbrella appears with probability 0.9; on a sunny "
+                         "day only 0.2. Yesterday was rainy, and today you see an umbrella."),
+             "question": "Which state is more likely today, and which two kinds of probabilities did you combine to decide?"},
             {"target_state": "understanding", "kind": "application", "title": "Model a new problem",
-             "description": "Design an HMM (states, observations, rough probabilities) for detecting whether a typist is tired from their keystroke timings."},
+             "description": "Design an HMM (states, observations, rough probabilities) for detecting whether a typist is tired from their keystroke timings.",
+             "content": ("A typist's keystrokes become slower and less regular when they are tired. You want to "
+                         "detect 'fresh' vs 'tired' over time from keystroke timings alone."),
+             "question": "What would you choose as the hidden states and as the observations for this HMM?"},
             {"target_state": "confident", "kind": "challenge", "title": "Limits of the Markov property",
-             "description": "Describe a sequence problem where the Markov assumption clearly breaks, and sketch how you would work around it. Teach your example to a classmate."},
+             "description": "Describe a sequence problem where the Markov assumption clearly breaks, and sketch how you would work around it. Teach your example to a classmate.",
+             "content": ("The Markov property says the next state depends only on the current state. But in many "
+                         "real sequences — a story, a chess game, a conversation — what happens next can depend "
+                         "on events from long ago."),
+             "question": "Describe one sequence problem where the Markov assumption clearly breaks, and sketch a workaround."},
         ],
     },
 ]
+
+# Demo faculty accounts and their subjects. The existing TOPICS above all
+# belong to the first teacher's subject; the Python sample below belongs to
+# the second, so the teacher/subject switcher has real, distinct content.
+TEACHERS = [
+    {"name": "Prof. Meera Krishnan", "subjects": ["Neural Networks"]},
+    {"name": "Prof. Arjun Rao", "subjects": ["Python Programming"]},
+]
+
+TOPIC_SUBJECT = "Neural Networks"  # subject of the three TOPICS above
+
+# A deliberately simple sample lecture used to exercise the REAL lecture
+# workflow at seed time: the material is run through the NLP preparation
+# (prepare_lecture), the suggestions are stored, and the reviewed_* fields
+# below play the role of the teacher's quick review edits before publishing.
+PYTHON_LECTURE = {
+    "subject": "Python Programming",
+    "title": "Python Basics — Variables, Data Types, and Basic Operations",
+    "description": "First steps in Python: storing values in variables, basic data types, and combining them with operators.",
+    "material": (
+        "Python variables are used to store values so that we can use them again later. "
+        "A variable is created with an assignment statement, using the = operator. "
+        "For instance, age = 20 stores the value 20 in the variable age. "
+        "Python has several basic data types: integers for whole numbers, floats for decimal numbers, "
+        "and strings for text. The type of a value decides what operations we can do with it. "
+        "Python supports basic arithmetic operators such as +, -, * and /. "
+        "An expression combines values, variables and operators, and Python evaluates it to produce a result. "
+        "For instance, total = price * quantity multiplies two variables and stores the result in total."
+    ),
+    "objectives": [
+        "Explain what a variable is and what assignment does.",
+        "Explain the basic data types: integers, floats and strings.",
+        "Explain how operators and expressions combine values.",
+    ],
+    # the teacher's quick review of the automatic draft: noisy suggestions
+    # removed ("Python", "Values", "Data types integers"), names tidied, two
+    # concepts the teacher considers essential added back in
+    "reviewed_concepts": [
+        {"name": "Variables",
+         "description": "Python variables are used to store values so that we can use them again later."},
+        {"name": "Assignment",
+         "description": "A variable is created with an assignment statement, using the = operator."},
+        {"name": "Data types",
+         "description": "Python has several basic data types: integers for whole numbers, floats for decimal numbers, and strings for text."},
+        {"name": "Operators",
+         "description": "Python supports basic arithmetic operators such as +, -, * and /."},
+        {"name": "Expressions",
+         "description": "An expression combines values, variables and operators, and Python evaluates it to produce a result."},
+    ],
+    "reviewed_relationships": [
+        {"source": "Assignment", "label": "stores a value in", "target": "Variables",
+         "description": "Assignment uses the = operator to store a value in a variable."},
+        {"source": "Expressions", "label": "combine", "target": "Variables",
+         "description": "An expression combines values, variables and operators to produce a result."},
+        {"source": "Operators", "label": "act on", "target": "Data types",
+         "description": "Operators act on values, and the data type of a value decides what operations are possible."},
+    ],
+    "reviewed_misconceptions": [
+        {"name": "A variable permanently keeps its first value",
+         "description": "Once a variable is assigned a value, that value can never change.",
+         "clarification": "A variable can be reassigned at any time; assignment just makes the name refer to a new value.",
+         "probe_question": "You suggested a variable keeps its first value forever. What happens if we assign it again?"},
+    ],
+}
 
 DEMO_STUDENTS = [
     {"name": "Aarav Shah", "program": "B.Tech CSE"},

@@ -10,11 +10,14 @@ Per turn:
   2. Answer clearly demonstrates the   -> encourage, move to the next concept
      concept                              (skipping any covered incidentally).
   3. Answer is partially right         -> one targeted probe, then accept.
-  4. Answer is unclear / very short    -> one easier question, then move on.
+  4. Short confirmation ("yes") of a   -> positive evidence, not full credit:
+     yes/no-style question                ask for the idea in their own words.
+  5. Answer is unclear / very short    -> one easier question, then move on.
 A misconception probed once and no longer detected in the reply is marked
 resolved. The session ends when every concept has been visited (plus an
 optional extension question when everything went well), or at MAX_QUESTIONS.
 """
+import re
 
 # Targeted thresholds are a little more permissive than the analyzer's global
 # ones: the question already establishes the context, so a short on-point
@@ -31,6 +34,28 @@ MAX_QUESTIONS = 12
 MAX_REL_QUESTIONS = 2  # at most this many relationship questions per session
 
 GIVE_UP_PHRASES = ("i don't know", "i dont know", "idk", "no idea", "not sure", "no clue")
+
+# A short confirmation of a yes/no-style question ("Does the gradient tell us
+# how the loss changes?" -> "yes") is positive evidence, but not enough for
+# full credit — the tutor asks for the idea in the student's own words.
+AFFIRMATION_PHRASES = {
+    "yes", "yeah", "yep", "yup", "ya", "correct", "right", "exactly", "true",
+    "i think so", "i agree", "that's right", "thats right", "definitely", "absolutely",
+}
+CONFIRM_STARTERS = ("does", "do", "is", "are", "can", "could", "would",
+                    "did", "has", "have", "was", "were", "will", "should")
+
+
+def _is_affirmation(text: str) -> bool:
+    norm = re.sub(r"[^a-z' ]", "", text.lower()).strip()
+    words = norm.split()
+    return norm in AFFIRMATION_PHRASES or (words[:1] == ["yes"] and len(words) <= 4)
+
+
+def _invites_confirmation(question: str) -> bool:
+    """True for yes/no-phrased questions, where a bare "yes" is meaningful."""
+    first = question.strip().lower().split(" ", 1)[0].rstrip(",:;") if question.strip() else ""
+    return first in CONFIRM_STARTERS
 
 ACK_CORRECT = [
     "Exactly.",
@@ -62,7 +87,13 @@ ACK_RESOLVED = [
     "That's it — you've cleared that up.",
     "Exactly — that distinction is clear now.",
 ]
+ACK_AFFIRM = [
+    "Yes — that's the right idea.",
+    "Right — good.",
+]
+ACK_AFFIRM_ACCEPT = "Okay — you agree with the idea; we'll firm it up with practice. Let's move on."
 
+DEEPEN_QUESTION = "Can you explain what that means in your own words?"
 GENERIC_MAIN = "In one or two sentences, what is \"{concept}\" about?"
 GENERIC_EASIER = "Let's make it simpler: how would you describe \"{concept}\" to a friend?"
 GENERIC_PROBE = "Can you say a bit more about how \"{concept}\" fits into {topic}?"
@@ -132,11 +163,18 @@ def _similarity_for(analysis: dict, entry: dict) -> float:
     return 0.0
 
 
-def _verdict(analysis: dict, entry: dict) -> str:
-    """Judge the answer against the concept currently being asked about."""
+def _verdict(analysis: dict, entry: dict, confirm_context: bool = False) -> str:
+    """Judge the answer against the concept currently being asked about.
+
+    confirm_context: the question just asked was yes/no-phrased, so a short
+    confirmation ("yes") is positive evidence — returned as "affirm" — rather
+    than an unclear answer. It is never full credit by itself.
+    """
     words = analysis.get("word_count", 0)
     text = " ".join(analysis.get("sentences", [])).lower()
     gave_up = words < 8 and any(p in text for p in GIVE_UP_PHRASES)
+    if confirm_context and not gave_up and _is_affirmation(text):
+        return "affirm"
     if words < MIN_WORDS or gave_up:
         return "unclear"
 
@@ -400,11 +438,42 @@ def play_turn(plan: dict, analysis: dict, topic_def: dict) -> tuple[dict, dict]:
     # --- evaluate the current concept ---
     cur = plan["concepts"][plan["current"]]
     cdef = _concept_def(topic_def, cur)
-    verdict = _verdict(analysis, cur)
+    # reconstruct the question just asked, to know whether a bare "yes" answers it
+    if plan["asked_kind"] in ("main", "easier", "probe"):
+        asked = question_for(cdef, plan["asked_kind"], topic_name)
+    elif plan["asked_kind"] == "deepen":
+        asked = DEEPEN_QUESTION
+    else:
+        asked = ""
+    verdict = _verdict(analysis, cur, confirm_context=_invites_confirmation(asked))
 
     if verdict == "correct":
         cur["status"] = "covered"
         result = _advance(plan, topic_def, _pick(ACK_CORRECT, qn))
+        return plan, {**result, **extras}
+
+    if verdict == "affirm":
+        # the deepen follow-up is gated on its own flag, not on the probe
+        # attempt counter: the easier yes/no question is usually reached
+        # AFTER an unclear attempt, and a correct "yes" there still deserves
+        # its "in your own words" follow-up
+        if not cur.get("deepened"):
+            cur["deepened"] = True
+            cur["affirmed"] = True
+            plan["asked_kind"] = "deepen"
+            plan["question_no"] += 1
+            return plan, {
+                "feedback": _pick(ACK_AFFIRM, qn),
+                "followup": {"kind": "deepen", "text": DEEPEN_QUESTION,
+                             "concept": cur["name"],
+                             "reason": "The confirmation is a good sign, but agreeing isn't explaining — asking for the idea in the student's own words."},
+                "done": False,
+                **extras,
+            }
+        # confirmed again after the deeper follow-up: keep it as partial
+        # evidence (they agree with the idea but haven't explained it)
+        cur["status"] = "partial"
+        result = _advance(plan, topic_def, ACK_AFFIRM_ACCEPT)
         return plan, {**result, **extras}
 
     if verdict == "partial":
@@ -437,7 +506,9 @@ def play_turn(plan: dict, analysis: dict, topic_def: dict) -> tuple[dict, dict]:
             "done": False,
             **extras,
         }
-    cur["status"] = "unclear"
+    # a concept the student correctly confirmed earlier keeps that positive
+    # evidence as partial credit even if the deeper explanation didn't land
+    cur["status"] = "partial" if cur.get("affirmed") else "unclear"
     result = _advance(plan, topic_def, _pick(ACK_MOVE_ON, qn))
     return plan, {**result, **extras}
 

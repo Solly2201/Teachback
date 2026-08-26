@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout.jsx'
+import Activity from './pages/Activity.jsx'
 import Progress from './pages/Progress.jsx'
 import RoleSelect from './pages/RoleSelect.jsx'
 import StudentDashboard from './pages/StudentDashboard.jsx'
 import TeachBack from './pages/TeachBack.jsx'
+import Lectures from './pages/Lectures.jsx'
 import TeacherDashboard from './pages/TeacherDashboard.jsx'
 import Topics from './pages/Topics.jsx'
 
@@ -40,12 +42,14 @@ export default function App() {
           <>
             <Route path="/" element={<StudentDashboard user={user} />} />
             <Route path="/teachback" element={<TeachBack user={user} />} />
+            <Route path="/activity" element={<Activity user={user} />} />
             <Route path="/progress" element={<Progress user={user} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </>
         ) : (
           <>
             <Route path="/" element={<TeacherDashboard />} />
+            <Route path="/lectures" element={<Lectures />} />
             <Route path="/topics" element={<Topics />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </>

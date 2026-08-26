@@ -74,11 +74,40 @@ def teacher_overview(db: Session = Depends(get_db)):
         else:
             avg_cov = avg_mis = avg_state = 0
         topic_stats.append(
-            {"id": t.id, "name": t.name, "sessions": len(t_obs),
+            {"id": t.id, "name": t.name,
+             "subject_name": t.subject.name if t.subject else None,
+             "sessions": len(t_obs),
              "avg_concept_coverage": round(avg_cov, 3),
              "avg_misconception_score": round(avg_mis, 3),
              "avg_state": round(avg_state, 2)}
         )
+
+    # lecture feedback aggregates (confidence/difficulty from live
+    # observation features; pace + request chips from completed sessions)
+    completed_sessions = db.query(TeachSession).filter(TeachSession.completed).all()
+    sessions_by_topic = defaultdict(list)
+    for ts in completed_sessions:
+        sessions_by_topic[ts.topic_id].append(ts)
+    topic_feedback = []
+    for t in topics:
+        t_live = [o for o in observations
+                  if o.topic_id == t.id and o.source == "live" and len(o.features or []) >= 8]
+        t_sessions = sessions_by_topic.get(t.id, [])
+        paces = Counter(ts.pace for ts in t_sessions if ts.pace)
+        choices = Counter(ch for ts in t_sessions for ch in (ts.feedback_choices or []))
+        comments = [ts.feedback_text for ts in t_sessions if (ts.feedback_text or "").strip()][-3:]
+        if not (t_live or paces or choices or comments):
+            continue
+        topic_feedback.append({
+            "id": t.id, "name": t.name,
+            "subject_name": t.subject.name if t.subject else None,
+            "responses": len(t_sessions),
+            "avg_confidence": round(10 * sum(o.features[6] for o in t_live) / len(t_live), 1) if t_live else None,
+            "avg_difficulty": round(10 * sum(o.features[7] for o in t_live) / len(t_live), 1) if t_live else None,
+            "pace": [{"label": k, "count": v} for k, v in paces.most_common()],
+            "common_requests": [{"label": k, "count": v} for k, v in choices.most_common(5)],
+            "recent_comments": comments,
+        })
 
     recent = [observation_out(o) for o in observations[-10:]][::-1]
     id_to_name = {s.id: s.name for s in students}
@@ -94,6 +123,7 @@ def teacher_overview(db: Session = Depends(get_db)):
         "common_misconceptions": common_misconceptions,
         "declining_students": declining[:8],
         "topic_stats": topic_stats,
+        "topic_feedback": topic_feedback,
         "recent_interactions": recent,
     }
 

@@ -1,0 +1,262 @@
+"""Quick Lecture workflow: material in -> NLP draft -> faculty review -> Topic.
+
+POST /api/lectures            create a lecture; runs the deterministic NLP
+                              preparation and stores the suggestions as an
+                              editable draft
+PUT  /api/lectures/{id}       save the teacher's review edits (concepts /
+                              relationships / misconceptions / objectives)
+POST /api/lectures/{id}/publish
+                              "Start TeachBack": build or update the linked
+                              Topic from the reviewed draft — the same Topic
+                              structure the detailed Topic Management editor
+                              uses, so both workflows share one knowledge
+                              system
+POST /api/lectures/extract    extract text from an uploaded .txt/.md/.pdf
+                              (sent base64-encoded to avoid a multipart dep)
+GET  /api/teachers            demo teachers with their subjects, for the
+                              lightweight teacher/subject switcher
+"""
+import base64
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..models import (Concept, ConceptRelationship, Lecture, Misconception,
+                      Subject, Teacher, Topic)
+from ..nlp.lecture_prep import extract_text, prepare_lecture
+from .helpers import topic_def
+
+router = APIRouter(prefix="/api", tags=["lectures"])
+
+MAIN_QUESTION_TEMPLATE = 'What did you understand about "{name}"?'
+
+
+class LectureIn(BaseModel):
+    subject_id: int
+    title: str
+    description: str = ""
+    material_text: str = Field(default="", max_length=100_000)
+    objectives: list[str] = Field(default_factory=list)
+
+
+class DraftConcept(BaseModel):
+    name: str
+    description: str = ""
+
+
+class DraftRelationship(BaseModel):
+    source: str
+    label: str = "relates to"
+    target: str
+    description: str = ""
+
+
+class DraftMisconception(BaseModel):
+    name: str
+    description: str = ""
+    clarification: str = ""
+    probe_question: str = ""
+
+
+class LectureUpdateIn(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    objectives: list[str] | None = None
+    concepts: list[DraftConcept] | None = None
+    relationships: list[DraftRelationship] | None = None
+    misconceptions: list[DraftMisconception] | None = None
+
+
+class ExtractIn(BaseModel):
+    filename: str
+    content_base64: str
+
+
+def lecture_out(lec: Lecture, include_material: bool = True) -> dict:
+    out = {
+        "id": lec.id,
+        "subject_id": lec.subject_id,
+        "subject_name": lec.subject.name if lec.subject else None,
+        "topic_id": lec.topic_id,
+        "title": lec.title,
+        "description": lec.description,
+        "objectives": lec.objectives or [],
+        "draft": lec.draft or {},
+        "suggestions": lec.suggestions or {},
+        "status": lec.status,
+        "created_at": lec.created_at.isoformat() if lec.created_at else None,
+    }
+    if include_material:
+        out["material_text"] = lec.material_text
+    return out
+
+
+@router.get("/teachers")
+def list_teachers(db: Session = Depends(get_db)):
+    teachers = db.query(Teacher).order_by(Teacher.id).all()
+    return [
+        {"id": t.id, "name": t.name,
+         "subjects": [{"id": s.id, "name": s.name} for s in sorted(t.subjects, key=lambda s: s.id)]}
+        for t in teachers
+    ]
+
+
+@router.post("/lectures/extract")
+def extract_material(data: ExtractIn):
+    try:
+        raw = base64.b64decode(data.content_base64)
+        text = extract_text(data.filename, raw)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception:
+        raise HTTPException(400, "Could not read the uploaded file.")
+    if not text.strip():
+        raise HTTPException(400, "No text could be extracted from the file.")
+    return {"text": text}
+
+
+@router.get("/lectures")
+def list_lectures(subject_id: int | None = None, db: Session = Depends(get_db)):
+    q = db.query(Lecture).order_by(Lecture.id.desc())
+    if subject_id is not None:
+        q = q.filter(Lecture.subject_id == subject_id)
+    return [lecture_out(l, include_material=False) for l in q.all()]
+
+
+@router.get("/lectures/{lecture_id}")
+def get_lecture(lecture_id: int, db: Session = Depends(get_db)):
+    lec = db.get(Lecture, lecture_id)
+    if not lec:
+        raise HTTPException(404, "Lecture not found")
+    return lecture_out(lec)
+
+
+def _known_misconceptions(db: Session) -> list[dict]:
+    return [
+        {"name": m.name, "description": m.description,
+         "clarification": m.clarification, "probe_question": m.probe_question}
+        for m in db.query(Misconception).all()
+    ]
+
+
+@router.post("/lectures")
+def create_lecture(data: LectureIn, db: Session = Depends(get_db)):
+    subject = db.get(Subject, data.subject_id)
+    if not subject:
+        raise HTTPException(404, "Subject not found")
+    if not data.material_text.strip():
+        raise HTTPException(400, "Provide the lecture material (paste notes or upload a file).")
+
+    prep = prepare_lecture(
+        data.material_text, title=data.title, description=data.description,
+        objectives=data.objectives, known_misconceptions=_known_misconceptions(db),
+    )
+    draft = {
+        "concepts": [{"name": c["name"], "description": c["description"]} for c in prep["concepts"]],
+        "relationships": [{"source": r["source"], "label": r["label"], "target": r["target"],
+                           "description": r["description"]} for r in prep["relationships"]],
+        "misconceptions": [],  # suggestions must be explicitly accepted by the teacher
+    }
+    lec = Lecture(
+        subject_id=subject.id, title=data.title, description=data.description,
+        material_text=data.material_text, objectives=prep["objectives"],
+        draft=draft, suggestions=prep, status="draft",
+    )
+    db.add(lec)
+    db.commit()
+    db.refresh(lec)
+    return lecture_out(lec)
+
+
+@router.put("/lectures/{lecture_id}")
+def update_lecture(lecture_id: int, data: LectureUpdateIn, db: Session = Depends(get_db)):
+    lec = db.get(Lecture, lecture_id)
+    if not lec:
+        raise HTTPException(404, "Lecture not found")
+    if data.title is not None:
+        lec.title = data.title
+    if data.description is not None:
+        lec.description = data.description
+    if data.objectives is not None:
+        lec.objectives = [o.strip() for o in data.objectives if o.strip()]
+    draft = dict(lec.draft or {})
+    if data.concepts is not None:
+        draft["concepts"] = [c.model_dump() for c in data.concepts if c.name.strip()]
+    if data.relationships is not None:
+        draft["relationships"] = [r.model_dump() for r in data.relationships
+                                  if r.source.strip() and r.target.strip()]
+    if data.misconceptions is not None:
+        draft["misconceptions"] = [m.model_dump() for m in data.misconceptions if m.name.strip()]
+    lec.draft = draft
+    db.commit()
+    db.refresh(lec)
+    return lecture_out(lec)
+
+
+def apply_draft_to_topic(topic: Topic, lec: Lecture) -> None:
+    """Build the Topic's knowledge structure from a lecture's reviewed draft.
+
+    Shared by the publish endpoint and the seeder so the sample lecture goes
+    through exactly the same pipeline a teacher would use.
+    """
+    draft = lec.draft or {}
+    concepts = draft.get("concepts") or []
+    topic.subject_id = lec.subject_id
+    topic.name = lec.title
+    topic.description = lec.description
+    # bounded reference for the semantic-correctness feature: the reviewed
+    # concept explanations, which come from the lecture material itself
+    topic.reference_explanation = " ".join(
+        c.get("description", "") for c in concepts if c.get("description")
+    ) or lec.material_text[:1000]
+    topic.opening_prompt = (
+        f"Tell me what you took away from the lecture on {lec.title} — in your own words."
+    )
+    topic.extension_question = ""  # no advanced questions unless the teacher adds one
+
+    topic.concepts = [
+        Concept(
+            name=c["name"], description=c.get("description", ""),
+            main_question=MAIN_QUESTION_TEMPLATE.format(name=c["name"]),
+            position=i,
+        )
+        for i, c in enumerate(concepts)
+    ]
+    topic.relationships = [
+        ConceptRelationship(source=r["source"], label=r.get("label", "relates to"),
+                            target=r["target"], description=r.get("description", ""), position=i)
+        for i, r in enumerate(draft.get("relationships") or [])
+    ]
+    topic.misconceptions = [
+        Misconception(name=m["name"], description=m.get("description", ""),
+                      clarification=m.get("clarification", ""),
+                      probe_question=m.get("probe_question", ""))
+        for m in (draft.get("misconceptions") or [])
+    ]
+    # activities intentionally stay empty here: the recommender builds
+    # deterministic template activities from the concepts, and the teacher
+    # can add custom activities later in Topic Management
+
+
+@router.post("/lectures/{lecture_id}/publish")
+def publish_lecture(lecture_id: int, db: Session = Depends(get_db)):
+    """Build/update the Topic from the reviewed draft ("Start TeachBack")."""
+    lec = db.get(Lecture, lecture_id)
+    if not lec:
+        raise HTTPException(404, "Lecture not found")
+    if not (lec.draft or {}).get("concepts"):
+        raise HTTPException(400, "Keep at least one concept before starting TeachBack.")
+
+    topic = db.get(Topic, lec.topic_id) if lec.topic_id else None
+    if topic is None:
+        topic = Topic()
+        db.add(topic)
+    apply_draft_to_topic(topic, lec)
+    db.flush()
+    lec.topic_id = topic.id
+    lec.status = "published"
+    db.commit()
+    db.refresh(topic)
+    return {"lecture": lecture_out(lec, include_material=False), "topic": topic_def(topic)}

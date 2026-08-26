@@ -24,7 +24,7 @@ export default function StudentDashboard({ user }) {
       <div className="grid lg:grid-cols-3 gap-5">
         {/* current state */}
         <div className="card lg:col-span-2">
-          <div className="card-header">Current learning state</div>
+          <div className="card-header">Current learning condition</div>
           <div className="p-5 flex flex-col sm:flex-row sm:items-center gap-4">
             <StateBadge label={data.current_state_label} size="lg" />
             <p className="text-sm text-charcoal-light flex-1">
@@ -59,6 +59,13 @@ export default function StudentDashboard({ user }) {
                 {rec.notes?.map((n, i) => (
                   <div key={i} className="mt-3 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-2">{n}</div>
                 ))}
+                <Link
+                  to="/activity"
+                  state={{ activity: { ...rec.activity, topic_id: rec.topic_id, topic_name: rec.topic_name }, why: rec.why }}
+                  className="btn-primary block text-center mt-4"
+                >
+                  Start Activity →
+                </Link>
               </>
             ) : (
               <p className="text-sm text-charcoal-light">Complete a session to get a recommendation.</p>

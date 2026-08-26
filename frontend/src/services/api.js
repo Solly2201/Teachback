@@ -22,8 +22,16 @@ export const api = {
   students: () => request('/students'),
   student: (id) => request(`/students/${id}`),
   progress: (id) => request(`/students/${id}/progress`),
-  topics: () => request('/topics'),
+  topics: (subjectId) => request(`/topics${subjectId ? `?subject_id=${subjectId}` : ''}`),
   topic: (id) => request(`/topics/${id}`),
+  teachers: () => request('/teachers'),
+  lectures: (subjectId) => request(`/lectures${subjectId ? `?subject_id=${subjectId}` : ''}`),
+  lecture: (id) => request(`/lectures/${id}`),
+  createLecture: (data) => request('/lectures', { method: 'POST', body: JSON.stringify(data) }),
+  updateLecture: (id, data) => request(`/lectures/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  publishLecture: (id) => request(`/lectures/${id}/publish`, { method: 'POST' }),
+  extractMaterial: (filename, contentBase64) =>
+    request('/lectures/extract', { method: 'POST', body: JSON.stringify({ filename, content_base64: contentBase64 }) }),
   createTopic: (data) => request('/topics', { method: 'POST', body: JSON.stringify(data) }),
   updateTopic: (id, data) => request(`/topics/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   startSession: (student_id, topic_id) =>
@@ -32,6 +40,8 @@ export const api = {
     request(`/sessions/${sessionId}/respond`, { method: 'POST', body: JSON.stringify({ text }) }),
   finish: (sessionId, report) =>
     request(`/sessions/${sessionId}/finish`, { method: 'POST', body: JSON.stringify(report) }),
+  activity: (id) => request(`/activities/${id}`),
+  completeActivity: (data) => request('/activities/complete', { method: 'POST', body: JSON.stringify(data) }),
   teacherOverview: () => request('/teacher/overview'),
   metaStates: () => request('/meta/states'),
   evaluation: () => request('/meta/evaluation'),
