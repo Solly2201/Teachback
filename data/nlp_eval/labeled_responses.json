@@ -1,0 +1,149 @@
+{
+  "description": "Hand-labelled student-style responses used to evaluate the NLP analyzer. Each item names the topic, the response text, the required concepts that a human judge considers demonstrated (fully or partially), and the known misconceptions present in the text.",
+  "items": [
+    {
+      "topic": "Backpropagation",
+      "text": "Backpropagation is how a neural network learns from its mistakes. First the network makes a prediction and we compute a loss that measures how wrong the prediction was. Then the error is sent backwards through the layers using the chain rule, and we compute the gradient of the loss with respect to every weight. Finally an optimizer uses those gradients to update the weights a little bit, and this repeats many times until the loss is small.",
+      "concepts_present": ["Loss / error", "Gradient", "Backward propagation of error", "Weight update", "Optimization / iteration"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "It's about training networks. The loss function tells us how bad the prediction is. Then we compute gradients for the weights.",
+      "concepts_present": ["Loss / error", "Gradient"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "Backpropagation and gradient descent are basically the same thing, it's just one algorithm with two different names. It makes the network learn by going backwards.",
+      "concepts_present": ["Backward propagation of error"],
+      "misconceptions_present": ["Backpropagation is the same as gradient descent"]
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "The network computes an error and then the gradient itself directly changes each weight value, there is no separate step, the gradient just changes the weights on its own.",
+      "concepts_present": ["Loss / error", "Gradient", "Weight update"],
+      "misconceptions_present": ["Gradients directly change the weights"]
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "Backpropagation works by changing the input data so the network produces the right answer for it. When the answer is wrong, the inputs get adjusted until the output matches.",
+      "concepts_present": [],
+      "misconceptions_present": ["Backpropagation changes the input"]
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "idk something with neural networks",
+      "concepts_present": [],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "The main idea is repetition: you do a forward pass, measure the error with a loss function, then do a backward pass and nudge the weights. Doing this thousands of times gradually minimises the loss.",
+      "concepts_present": ["Loss / error", "Backward propagation of error", "Weight update", "Optimization / iteration"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "A gradient is like a slope: it tells you how much the loss would change if you changed a weight slightly. The learning rate controls how big a step we take against that slope when updating each weight.",
+      "concepts_present": ["Gradient", "Weight update", "Loss / error"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "After the network sees the correct answer it just edits its output prediction directly so the error goes away. That is how the error gets fixed.",
+      "concepts_present": ["Loss / error"],
+      "misconceptions_present": ["Error is fixed by editing the prediction"]
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "The chain rule lets us push the error signal from the output layer back through each hidden layer, so every weight knows its share of the blame for the mistake.",
+      "concepts_present": ["Backward propagation of error", "Loss / error"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "Backpropagation computes the gradients and gradient descent is the separate optimizer that actually uses them to update the weights. People confuse them but they are two different steps.",
+      "concepts_present": ["Gradient", "Weight update"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Backpropagation",
+      "text": "Training is an iterative optimization process where the network's parameters slowly move towards values that make the loss function as small as possible.",
+      "concepts_present": ["Optimization / iteration", "Loss / error"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Overfitting and Regularization",
+      "text": "Overfitting means the model memorises the training data including its noise, so it does great on the training set but badly on new data. You can see it when training accuracy is high but validation accuracy is much lower. Regularization like an L2 penalty on large weights keeps the model simpler so it generalises better.",
+      "concepts_present": ["Overfitting", "Generalisation gap", "Regularization penalty"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Overfitting and Regularization",
+      "text": "If the model gets very high accuracy on the training set then it is a good model, that basically proves it learned the task well.",
+      "concepts_present": [],
+      "misconceptions_present": ["High training accuracy means a good model"]
+    },
+    {
+      "topic": "Overfitting and Regularization",
+      "text": "Regularization works by deleting the noisy examples from the training data so the model never sees them.",
+      "concepts_present": [],
+      "misconceptions_present": ["Regularization removes training data"]
+    },
+    {
+      "topic": "Overfitting and Regularization",
+      "text": "Bigger and more flexible models with lots of parameters overfit more easily than small simple ones, because they have enough capacity to memorise every training example.",
+      "concepts_present": ["Model complexity", "Overfitting"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Overfitting and Regularization",
+      "text": "Training for more epochs always makes the model better on new data, so you should train as long as possible.",
+      "concepts_present": [],
+      "misconceptions_present": ["More training always helps"]
+    },
+    {
+      "topic": "Overfitting and Regularization",
+      "text": "In practice you fight overfitting with early stopping based on a validation set, dropout during training, or simply collecting more data.",
+      "concepts_present": ["Validation-based control"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Hidden Markov Models",
+      "text": "An HMM models a system that moves between hidden states you cannot observe directly. Each state emits observations with some probability, and transitions between states follow probabilities that only depend on the current state. Using the Viterbi algorithm you can recover the most likely state sequence from the observations.",
+      "concepts_present": ["Hidden states", "Observations / emissions", "Transition probabilities", "Markov property", "State inference / decoding"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Hidden Markov Models",
+      "text": "In an HMM you can directly see which state the system is in at every time step, the states are visible in the data.",
+      "concepts_present": ["Hidden states"],
+      "misconceptions_present": ["States are directly observable"]
+    },
+    {
+      "topic": "Hidden Markov Models",
+      "text": "The next hidden state depends on the entire history of all previous states and everything the system has ever emitted, the whole past matters.",
+      "concepts_present": ["Transition probabilities"],
+      "misconceptions_present": ["Next state depends on the whole history"]
+    },
+    {
+      "topic": "Hidden Markov Models",
+      "text": "The classic example is the weather: you never see the weather itself, only whether people carry umbrellas, and from that observable evidence you infer the hidden weather state behind it.",
+      "concepts_present": ["Hidden states", "Observations / emissions", "State inference / decoding"],
+      "misconceptions_present": []
+    },
+    {
+      "topic": "Hidden Markov Models",
+      "text": "Each observation tells you exactly which state produced it, the outputs are the states, so there is nothing to infer really.",
+      "concepts_present": ["Observations / emissions"],
+      "misconceptions_present": ["Observations equal states"]
+    },
+    {
+      "topic": "Hidden Markov Models",
+      "text": "The Markov assumption says the next state only depends on the state you are in right now, not on how you got there. That assumption is what keeps the maths tractable.",
+      "concepts_present": ["Markov property"],
+      "misconceptions_present": []
+    }
+  ]
+}

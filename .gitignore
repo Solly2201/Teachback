@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Node
+node_modules/
+
+# Frontend build output
+frontend/dist/
+
+# Local demo database (regenerate with: python backend/scripts/build_all.py --force-seed)
+backend/teachback.db
+
+# Environment / secrets
+.env
+.env.*
+
+# IDE / editor metadata
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db

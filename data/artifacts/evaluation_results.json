@@ -1,0 +1,252 @@
+{
+  "nlp": {
+    "n_labelled_responses": 24,
+    "concept_detection": {
+      "precision": 0.767,
+      "recall": 0.767,
+      "f1": 0.767,
+      "tp": 33,
+      "fp": 10,
+      "fn": 10,
+      "accuracy": 0.833,
+      "n_pairs": 120
+    },
+    "misconception_detection": {
+      "precision": 0.9,
+      "recall": 0.9,
+      "f1": 0.9,
+      "tp": 9,
+      "fp": 1,
+      "fn": 1,
+      "accuracy": 0.976,
+      "n_pairs": 84
+    },
+    "errors": [
+      {
+        "type": "concept_fn",
+        "topic": "Backpropagation",
+        "concept": "Backward propagation of error",
+        "text": "Backpropagation and gradient descent are basically the same thing, it's just one"
+      },
+      {
+        "type": "concept_fn",
+        "topic": "Backpropagation",
+        "concept": "Loss / error",
+        "text": "The network computes an error and then the gradient itself directly changes each"
+      },
+      {
+        "type": "miscon_fn",
+        "topic": "Backpropagation",
+        "misconception": "Gradients directly change the weights",
+        "text": "The network computes an error and then the gradient itself directly changes each"
+      },
+      {
+        "type": "concept_fn",
+        "topic": "Backpropagation",
+        "concept": "Loss / error",
+        "text": "The main idea is repetition: you do a forward pass, measure the error with a los"
+      },
+      {
+        "type": "concept_fn",
+        "topic": "Backpropagation",
+        "concept": "Backward propagation of error",
+        "text": "The main idea is repetition: you do a forward pass, measure the error with a los"
+      },
+      {
+        "type": "concept_fn",
+        "topic": "Backpropagation",
+        "concept": "Weight update",
+        "text": "The main idea is repetition: you do a forward pass, measure the error with a los"
+      },
+      {
+        "type": "concept_fn",
+        "topic": "Backpropagation",
+        "concept": "Loss / error",
+        "text": "A gradient is like a slope: it tells you how much the loss would change if you c"
+      },
+      {
+        "type": "concept_fn",
+        "topic": "Backpropagation",
+        "concept": "Loss / error",
+        "text": "After the network sees the correct answer it just edits its output prediction di"
+      },
+      {
+        "type": "concept_fn",
+        "topic": "Backpropagation",
+        "concept": "Loss / error",
+        "text": "The chain rule lets us push the error signal from the output layer back through "
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Backpropagation",
+        "concept": "Optimization / iteration",
+        "text": "Backpropagation computes the gradients and gradient descent is the separate opti"
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Overfitting and Regularization",
+        "concept": "Overfitting",
+        "text": "In practice you fight overfitting with early stopping based on a validation set,"
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Overfitting and Regularization",
+        "concept": "Generalisation gap",
+        "text": "In practice you fight overfitting with early stopping based on a validation set,"
+      },
+      {
+        "type": "miscon_fp",
+        "topic": "Hidden Markov Models",
+        "misconception": "States are directly observable",
+        "text": "An HMM models a system that moves between hidden states you cannot observe direc"
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Hidden Markov Models",
+        "concept": "State inference / decoding",
+        "text": "In an HMM you can directly see which state the system is in at every time step, "
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Hidden Markov Models",
+        "concept": "Hidden states",
+        "text": "The next hidden state depends on the entire history of all previous states and e"
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Hidden Markov Models",
+        "concept": "Observations / emissions",
+        "text": "The next hidden state depends on the entire history of all previous states and e"
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Hidden Markov Models",
+        "concept": "Markov property",
+        "text": "The next hidden state depends on the entire history of all previous states and e"
+      },
+      {
+        "type": "concept_fn",
+        "topic": "Hidden Markov Models",
+        "concept": "Hidden states",
+        "text": "The classic example is the weather: you never see the weather itself, only wheth"
+      },
+      {
+        "type": "concept_fn",
+        "topic": "Hidden Markov Models",
+        "concept": "State inference / decoding",
+        "text": "The classic example is the weather: you never see the weather itself, only wheth"
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Hidden Markov Models",
+        "concept": "Hidden states",
+        "text": "Each observation tells you exactly which state produced it, the outputs are the "
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Hidden Markov Models",
+        "concept": "State inference / decoding",
+        "text": "Each observation tells you exactly which state produced it, the outputs are the "
+      },
+      {
+        "type": "concept_fp",
+        "topic": "Hidden Markov Models",
+        "concept": "Transition probabilities",
+        "text": "The Markov assumption says the next state only depends on the state you are in r"
+      }
+    ]
+  },
+  "hmm": {
+    "n_train_students": 160,
+    "n_test_students": 40,
+    "n_test_sessions": 297,
+    "state_accuracy": 0.976,
+    "adjacent_state_accuracy": 1.0,
+    "confusion_matrix": [
+      [
+        28,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        69,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        74,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        2,
+        76,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        3,
+        43
+      ]
+    ],
+    "confusion_labels": [
+      "Not Trying",
+      "Unclear",
+      "Struggling but Trying",
+      "Understanding",
+      "Confident"
+    ],
+    "per_state": {
+      "Not Trying": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 28,
+        "fp": 0,
+        "fn": 0
+      },
+      "Unclear": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "tp": 69,
+        "fp": 0,
+        "fn": 0
+      },
+      "Struggling but Trying": {
+        "precision": 0.974,
+        "recall": 0.987,
+        "f1": 0.98,
+        "tp": 74,
+        "fp": 2,
+        "fn": 1
+      },
+      "Understanding": {
+        "precision": 0.95,
+        "recall": 0.962,
+        "f1": 0.956,
+        "tp": 76,
+        "fp": 4,
+        "fn": 3
+      },
+      "Confident": {
+        "precision": 0.977,
+        "recall": 0.935,
+        "f1": 0.956,
+        "tp": 43,
+        "fp": 1,
+        "fn": 3
+      }
+    }
+  }
+}

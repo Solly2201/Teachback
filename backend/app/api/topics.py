@@ -1,0 +1,111 @@
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..models import Activity, Concept, Misconception, Topic
+from .helpers import topic_def
+
+router = APIRouter(prefix="/api/topics", tags=["topics"])
+
+
+class ConceptIn(BaseModel):
+    name: str
+    description: str = ""
+    main_question: str = ""
+    easier_question: str = ""
+    probe_question: str = ""
+    application_question: str = ""
+
+
+class MisconceptionIn(BaseModel):
+    name: str
+    description: str = ""
+    clarification: str = ""
+    probe_question: str = ""
+
+
+class ActivityIn(BaseModel):
+    title: str
+    description: str = ""
+    kind: str = "practice"
+    target_state: str = "understanding"
+
+
+class TopicIn(BaseModel):
+    name: str
+    description: str = ""
+    reference_explanation: str = ""
+    opening_prompt: str = ""
+    extension_question: str = ""
+    concepts: list[ConceptIn] = Field(default_factory=list)
+    misconceptions: list[MisconceptionIn] = Field(default_factory=list)
+    activities: list[ActivityIn] = Field(default_factory=list)
+
+
+@router.get("")
+def list_topics(db: Session = Depends(get_db)):
+    topics = db.query(Topic).order_by(Topic.id).all()
+    return [
+        {
+            "id": t.id,
+            "name": t.name,
+            "description": t.description,
+            "concept_count": len(t.concepts),
+            "misconception_count": len(t.misconceptions),
+            "activity_count": len(t.activities),
+        }
+        for t in topics
+    ]
+
+
+@router.get("/{topic_id}")
+def get_topic(topic_id: int, db: Session = Depends(get_db)):
+    t = db.get(Topic, topic_id)
+    if not t:
+        raise HTTPException(404, "Topic not found")
+    return topic_def(t)
+
+
+def _apply(t: Topic, data: TopicIn):
+    t.name = data.name
+    t.description = data.description
+    t.reference_explanation = data.reference_explanation
+    t.opening_prompt = data.opening_prompt or f"Teach me what you understand about {data.name}, as if I have never learned it."
+    t.extension_question = data.extension_question
+    t.concepts = [
+        Concept(name=c.name, description=c.description, position=i,
+                main_question=c.main_question, easier_question=c.easier_question,
+                probe_question=c.probe_question, application_question=c.application_question)
+        for i, c in enumerate(data.concepts)
+    ]
+    t.misconceptions = [
+        Misconception(name=m.name, description=m.description, clarification=m.clarification,
+                      probe_question=m.probe_question)
+        for m in data.misconceptions
+    ]
+    t.activities = [
+        Activity(title=a.title, description=a.description, kind=a.kind, target_state=a.target_state)
+        for a in data.activities
+    ]
+
+
+@router.post("")
+def create_topic(data: TopicIn, db: Session = Depends(get_db)):
+    t = Topic()
+    _apply(t, data)
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return topic_def(t)
+
+
+@router.put("/{topic_id}")
+def update_topic(topic_id: int, data: TopicIn, db: Session = Depends(get_db)):
+    t = db.get(Topic, topic_id)
+    if not t:
+        raise HTTPException(404, "Topic not found")
+    _apply(t, data)
+    db.commit()
+    db.refresh(t)
+    return topic_def(t)
