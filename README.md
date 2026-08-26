@@ -136,13 +136,19 @@ Student responses are evaluated **against that definition**.
 
 - Sentences are embedded with the pretrained **sentence-transformers** model
   `all-MiniLM-L6-v2` (a non-generative embedding model).
-- **Concept coverage** — best cosine similarity between any student sentence and each concept
-  description (full credit ≥ 0.62, partial ≥ 0.56). Simple and informal wording counts:
-  *"It tells us how much the error changes when we change a weight"* is valid evidence for
-  the gradient concept.
-- **Misconception detection** — a sentence is flagged only if it is similar enough to the
-  wrong claim (≥ 0.65) **and** closer to the wrong claim than to the correct clarification
-  (margin 0.08). This keeps correct statements about the same subject from being flagged.
+- **Concept coverage** — each concept is represented by *several* reference texts: its meaning
+  **plus each teacher-reviewed "important fact" from the lecture** (e.g. *"Indexes start at
+  0."*). The best cosine similarity between any student sentence and any reference counts
+  (full credit ≥ 0.62, partial ≥ 0.56), so a student who says *"the first position is zero"*
+  matches the taught fact even with no shared textbook wording. Which specific facts the
+  student expressed is tracked and shown to faculty as evidence.
+- **Misconception detection** — a sentence is flagged only when it is genuinely closer to the
+  wrong claim than to the *correct* account of the material: similar enough to the wrong claim
+  (≥ 0.65) **and** either (a) closer to it than to both the clarification and the concepts'
+  own reference texts (margin 0.08) — which stops the system inventing a misconception out of
+  a correct answer — or (b) semantically about the claim while using a word unique to the
+  wrong version and none unique to the clarification (embeddings are nearly blind to
+  "index 1" vs "index 0", so the cue path catches polarity/number flips).
 - **Semantic correctness** — cosine similarity of the whole response to the reference
   explanation, rescaled to 0–1.
 - **Explanation depth / response effort** — structural richness and length measures.
@@ -166,26 +172,65 @@ question** at a time and adapts:
 - **short confirmation of a yes/no question** ("yes") → positive evidence, not full credit:
   *"Right — can you explain what that means in your own words?"* — but "yes" to an open
   question earns nothing, and "I don't know" is never inflated (a content-word-overlap guard
-  blocks empty answers from the contextual scorer);
+  blocks empty answers from the contextual scorer, and topic-title words like "Python" don't
+  count as overlap);
 - partly right → one targeted probe;
+- **a plausible analogy** ("it's like a row of numbered boxes") → neither accepted nor
+  rejected: *"Interesting analogy — can you connect that back to …?"*;
 - unclear → one easier question;
 - misconception → explain the distinction, probe once, and mark it **resolved** if the next
   answer no longer contains it.
+
+Question thresholds are **calibrated against the labelled answer dataset**
+(`data/nlp/labeled_answers.json`, ~200 hand-written answers) with
+`python scripts/evaluate_nlp.py --tune`; the chosen values are committed explicitly in
+`nlp/conversation.py` — nothing retrains or self-modifies at runtime.
 
 The session ends when every concept has been visited — the 12-question limit is a safety cap,
 not a target. Depth is never confused with understanding: no advanced questions are asked
 unless the teacher configured them (lecture-published topics have no extension question at
 all), and lecture-mode questions are conversational (*"What did you understand about X?"*).
 
-### Lecture preparation (`nlp/lecture_prep.py`)
+### Lecture preparation (`nlp/lecture_parser.py` + `nlp/lecture_prep.py`)
 
-Deterministic extraction, no LLM: sentence segmentation → contiguous content-word n-grams
-(verbs and note-taking noise rejected) → scored by frequency × embedding centrality to the
-whole document, boosted for phrases named in the title/objectives → embedding-based
-deduplication → per-concept "possible explanation" (the closest lecture sentence, verbatim) →
-relationship suggestions from sentences mentioning two concepts → objective templates.
-Everything is a *suggestion*; the faculty review screen exists precisely because this is
-heuristic keyphrase extraction, not semantic understanding of the lecture.
+Deterministic extraction, no LLM — and **structure first, semantics second**. The parser turns
+raw notes into a document tree: headings (Markdown or plain-text), bullets, numbered items,
+fenced code, `Example:` lines, and special sections (*Learning Objectives*, *Important
+Connections*, *Common Mistakes*, *Summary*). Then:
+
+- **Structured notes** (real headings): each content section becomes a candidate concept —
+  name from the heading, *meaning* from the section's explanatory prose, *important facts*
+  from the remaining short sentences, *examples* kept as examples (code tokens are never
+  mined as concepts). Every concept keeps its provenance (`source_section`,
+  `source_sentences`), so the review screen can show *why* it was suggested.
+- **Plain prose** (no headings): the n-gram fallback — content-word phrases scored by
+  frequency × embedding centrality, but a candidate is only kept when the lecture actually
+  *explains* it (a sentence where it appears early and gets elaborated). Generic nouns
+  without explanatory support are rejected, so notes about strings no longer produce
+  "Letters", "Values" or "Operator" as concepts.
+- **Relationships**: explicit `A → label → B` lines from an *Important Connections* section
+  first, then sentences mentioning two concepts.
+- **Misconception suggestions**: *Common Mistakes* lines — "Students may think X, but
+  actually Y" splits into the wrong claim and its clarification — plus previously authored
+  misconceptions the lecture is semantically about.
+- **Question drafts** per concept (main / easier / probe / application), templated from the
+  concept's own facts and examples — e.g. the probe quotes an actual lecture fact. The
+  application question is optional extension material, never required.
+- **Suggested activities** built from the lecture's own concepts and examples, one per
+  learning state.
+
+Everything is a *suggestion*; nothing becomes authoritative until the teacher reviews and
+publishes it.
+
+### Recommended note format & optional external AI preparation
+
+The lecture-creation page shows a **recommended note template** (headings + Examples +
+Important Connections + Common Mistakes) — recommended, not required; ordinary notes still
+work. It also offers a **"Copy AI preparation prompt"** button: text the teacher may paste
+into an external assistant (ChatGPT, Claude, …) to convert rough notes into the template. The
+prompt forbids inventing information, requires preserving terminology/examples/code, and marks
+uncertainty as `[UNCLEAR]`. **TeachBack itself never calls an LLM** — this is copyable text
+only (`GET /api/lectures/prep-prompt`).
 
 ### Student summary (`Your takeaway`)
 
@@ -193,6 +238,44 @@ After the conversation the student writes what they personally took away. It is 
 the session, shown on Progress, and analyzed as an **upgrade-only** evidence source: it can
 add or strengthen concept/relationship evidence but can never lower anything — a short summary
 is never a penalty.
+
+### Quick knowledge check (MCQs) — secondary evidence, not the measure
+
+After the conversation and takeaway, the student can *optionally* take a short
+teacher-reviewed 10-question check. The two signals are deliberately different and
+deliberately kept separate:
+
+- **TeachBack asks:** *what can the student explain in their own words?* (primary)
+- **The knowledge check asks:** *what can the student correctly recognise/apply?* (supporting)
+
+Neither alone is a perfect measurement: a student may understand something and make a careless
+MCQ mistake, memorise an answer they cannot explain, explain an idea in different terminology,
+or misunderstand one detail inside a broadly understood concept. The system preserves this
+nuance instead of collapsing it:
+
+| TeachBack | MCQ | Interpretation |
+|---|---|---|
+| strong | strong | strong supporting evidence |
+| strong | weak | explanation evidence **stays**; the specific MCQ gap is named as "worth a quick review" |
+| weak | strong | *not* called confused — "practice putting the idea into your own words" |
+| weak | weak | stronger case for review/support |
+
+Questions are **generated deterministically** (`nlp/quiz_gen.py`) from the teacher-reviewed
+structure only — concept meanings, reviewed facts, lecture examples, relationships and the
+teacher's own misconceptions supply both answers and distractors, so nothing outside the
+lecture is ever asked. Difficulty mix: ~4 recognition, ~3 application (e.g. *"what does
+`s[0:3]` give?"* built from the lecture's own example), ~2 spot-the-false-statement (the
+teacher's wrong claims among taught facts), ~1 relationship. Every question passes structural
+validation (4 unique options, one correct answer, no accidental answer clues) and the teacher
+can **edit / delete / regenerate / add** every question on the lecture page before publishing.
+
+Results are stored per answer and per concept (`Quiz`/`QuizQuestion`/`QuizAttempt`/
+`QuizAnswer`), shown to the student as *"8/10 questions correct"* with solid/revisit concept
+lists (never an alarming grade), and to the teacher as **two side-by-side per-concept
+numbers** — MCQ % and TeachBack-demonstrated % — never one "mastery" score. The score becomes
+an evidence *note* on the session's observation and can refresh the recommendation (e.g.
+"Quick review: Slicing"); it **never touches the 8-dimensional observation vector, the HMM
+artifact, or the estimated state**.
 
 ## 8. Confidence, difficulty and lecture feedback
 
@@ -264,24 +347,29 @@ session evidence.
 
 Data model: **Teacher → Subject → Lecture/Topic → TeachBack sessions → Students.** The faculty
 interface has a lightweight teacher/subject switcher (demo-level context switching, *not*
-authentication — a documented limitation). The selected subject scopes the Lecture TeachBacks
-and Topic Management pages, so Prof. Arjun Rao's *Python Programming* view never shows
-Prof. Meera Krishnan's *Neural Networks* topics, and vice versa. The student topic chooser is
-grouped by subject.
+authentication — a documented limitation). The selected subject scopes **every faculty-facing
+query in the backend** — dashboard statistics, state distribution, misconception aggregates,
+declining students, topic stats, lecture feedback, recent interactions and session counts all
+filter by the subject's topics in `/api/teacher/overview?subject_id=…` (not by frontend
+filtering), so Prof. Arjun Rao's *Python Programming* dashboard can never show Prof. Meera
+Krishnan's *Neural Networks* data, and vice versa. Cross-subject isolation is asserted by
+regression tests (`tests/test_subject_isolation.py`). The student topic chooser is grouped by
+subject.
 
 ## 13. Demo accounts & data
 
 - **Teachers:** Prof. Meera Krishnan (*Neural Networks*: Backpropagation, Overfitting and
   Regularization, Hidden Markov Models — fully hand-authored topics) and Prof. Arjun Rao
-  (*Python Programming*: Python Basics).
+  (*Python Programming*: Strings in Python).
 - **Students:** 9 named demo students (including **Shreshtha Bindal · B.Tech CE · B023**, the
-  primary demo student) plus background students with seeded histories.
-- **Python Basics — Variables, Data Types, and Basic Operations** is seeded through the *real*
-  lecture pipeline: the stored lecture record contains the raw material, the untouched NLP
-  suggestions (`Variables, Python, Values, Operator, …`) and the teacher-reviewed draft
-  (`Variables, Assignment, Data types, Operators, Expressions`) that was published. It exists
-  precisely to show the system is generic and not hardcoded around Backpropagation — there is
-  no Python-specific code anywhere.
+  primary demo student) plus background students with seeded histories — some in both
+  subjects, so both dashboards have their own (non-overlapping) data.
+- **Strings in Python** is seeded through the *real* lecture pipeline: the stored lecture
+  record contains the raw structured notes, the untouched NLP suggestions computed from them,
+  and the teacher-reviewed draft (Strings, String assignment, Characters, Indexing, Slicing,
+  split() and join() — with facts, examples, custom questions, relationships, misconceptions
+  and activities) that was published. It exists precisely to show the system is generic and
+  not hardcoded around Backpropagation — there is no Python-specific code anywhere.
 
 ## 14. How to run (Windows-friendly)
 
@@ -312,8 +400,12 @@ reproducible). Production frontend build: `cd teachback/frontend && npm run buil
 
 ```bash
 cd teachback
-python -m pytest tests -q      # 76 tests: NLP, conversation, lectures, feedback,
-                               # recommendations, activities, HMM, API end-to-end
+python -m pytest tests -q      # NLP, conversation, lecture extraction, demo scenarios,
+                               # subject isolation, HMM integrity, feedback,
+                               # recommendations, activities, API end-to-end
+
+python scripts/evaluate_nlp.py         # answer-evaluator metrics on the labelled set
+python scripts/evaluate_nlp.py --tune  # threshold calibration sweep
 ```
 
 ## 15. Faculty demo (~5 minutes)
@@ -334,10 +426,14 @@ python -m pytest tests -q      # 76 tests: NLP, conversation, lectures, feedback
 7. Click **Start Activity →**, complete the short task, and see the completion on
    **Progress** along with your takeaway.
 8. Switch to **Teacher** → pick *Prof. Arjun Rao / Python Programming* in the switcher → open
-   the **Python Basics** lecture on the Lecture TeachBacks page: the NLP suggestions and the
-   reviewed concepts are both visible. Repeat a quick TeachBack on Python Basics as a student
-   to prove the whole pipeline is generic. The Class Overview shows the lecture-feedback
-   aggregates (pace, requests, confidence, difficulty).
+   the **Strings in Python** lecture on the Lecture TeachBacks page: the NLP suggestions, the
+   reviewed concepts (with their source evidence) and the suggested activities are all
+   visible. Run a TeachBack on Strings as *Shreshtha Bindal* with deliberately simple answers
+   — *"Strings are basically text stored in quotes"*, *"You use the position to get a
+   character, and the first position is zero"* — and watch them accepted naturally, with no
+   escalation once a concept is demonstrated. The Class Overview shows only the selected
+   subject's data plus the lecture-feedback aggregates (pace, requests, confidence,
+   difficulty).
 
 ## 16. Architecture & technology stack
 
@@ -368,9 +464,11 @@ teachback/
 │       └── services/        API client
 ├── data/
 │   ├── synthetic/           generated dataset (JSON + CSV)
-│   ├── nlp_eval/            hand-labelled responses for NLP evaluation
+│   ├── nlp/                 curated labelled answers for evaluator calibration
+│   ├── nlp_eval/            hand-labelled responses for the legacy NLP evaluation
 │   └── artifacts/           trained HMM, state mapping, evaluation results
-├── tests/                   pytest suite (76 tests)
+├── scripts/evaluate_nlp.py  answer-evaluator metrics + threshold tuning
+├── tests/                   pytest suite (100+ tests)
 └── README.md
 ```
 
@@ -379,16 +477,44 @@ Frontend: React 18, Vite, Tailwind. Storage: SQLite. **No LLM APIs anywhere.**
 
 ## 17. Evaluation methodology & results
 
-Numbers below are produced by `scripts/build_all.py` and stored in
-`data/artifacts/evaluation_results.json` — recomputed on every build, not hard-coded.
+**What is trained vs. what is curated — no fake training claims:**
 
-**NLP** — evaluated on 24 hand-labelled student-style responses (120 concept pairs,
-84 misconception pairs):
+- The **sentence-transformer** (`all-MiniLM-L6-v2`) is a *pretrained* embedding model used
+  as-is; TeachBack trains no neural network of its own.
+- `data/nlp/labeled_answers.json` (~200 hand-written answers + relationship checks) is a
+  *curated evaluation/calibration set* used to tune and regression-test the deterministic
+  evaluator. It is **not** real student data and the evaluator was **not** "trained on
+  student answers".
+- The **HMM** is the pre-existing artifact trained once on synthetic trajectories
+  (`data/artifacts/hmm_model.joblib`); its SHA256 is pinned by regression tests and it was
+  not retrained in the quality pass.
 
-| Task | Precision | Recall | F1 |
-|------|-----------|--------|-----|
-| Concept detection | 0.767 | 0.767 | 0.767 |
-| Misconception detection | 0.90 | 0.90 | 0.90 |
+**Answer evaluator** — `python scripts/evaluate_nlp.py` runs every labelled answer through the
+real per-turn pipeline (analysis + targeted check + verdict) and reports per-label
+precision/recall/F1, a 4×4 confusion matrix, and per-category accuracy (simple language,
+paraphrases, short answers, analogies, noise, …). The dataset is split deterministically into a
+**calibration portion (132 items — thresholds tuned only on these)** and a **held-out portion
+(66 items — never used for tuning)**:
+
+| | Calibration (132) | Held-out (66) |
+|---|---|---|
+| Strict label accuracy | 0.63 | 0.62 |
+| Evidence-level accuracy | 0.85 | 0.79 |
+| Misconception precision | **1.00** | **1.00** |
+| Misconception recall | 0.50 | 0.75 |
+| Strong-evidence F1 | 0.67 | 0.76 |
+
+("Evidence-level" counts strong↔partial confusion as acceptable — both mean "the student
+showed understanding".) The held-out portion is small (~66 items), so its numbers are a
+sanity check rather than precise statistics — but they are consistent with calibration,
+suggesting the thresholds are not badly overfit. Misconception *precision* is deliberately
+prioritised over recall: the system must never accuse a correct answer of being a
+misconception; missed paraphrased misconceptions fall through to the normal probe flow
+instead. All 9 relationship checks (demonstrated vs. reversed) behave as expected.
+
+**Legacy NLP feature evaluation** — `scripts/build_all.py` additionally scores concept /
+misconception detection on `data/nlp_eval/` and stores results in
+`data/artifacts/evaluation_results.json` (recomputed on every build, not hard-coded).
 
 **HMM** — students split 80/20; trained on 160 students, Viterbi-decoded on the 40 held-out
 students against the generator's true states:
@@ -415,15 +541,28 @@ happening in a student's mind.
   recovery of the generating process, not validated performance on real students.
 - Relationship contradiction detection relies on cue words from the teacher-authored wrong
   version; contradictions phrased with entirely different vocabulary (or negation, e.g.
-  "does not decrease") can be missed. Analogies with no shared content words fall back to an
-  easier follow-up question rather than being credited immediately.
-- Misconception detection needs the wrong belief to be phrased somewhat like the stored claim,
-  and lecture-preparation misconception suggestions only draw on misconceptions a teacher has
-  already authored somewhere in the system.
-- Automatic lecture concept extraction is frequency + embedding-centrality heuristics, not
-  semantic understanding of the lecture; it regularly needs the faculty review step to remove
-  noisy phrases, rename concepts, or add missing ones. That review step is a design feature,
-  not an afterthought.
+  "does not decrease") can be missed. Analogies are never auto-credited: a plausible one gets
+  a "connect it back" follow-up, and one with no semantic footing gets an easier question.
+- Misconception detection prioritises precision over recall: a wrong belief phrased with
+  entirely different vocabulary than the stored claim (e.g. *"you start counting from one"*
+  instead of *"the first character is at index 1"*) can be missed, because embeddings are
+  nearly blind to polarity/number flips and the cue-word path needs at least one shared
+  marked word. Missed misconceptions fall through to the normal probe/easier-question flow.
+- A paraphrase that shares *no* content words with the concept's meaning or facts (e.g.
+  *"you can find a particular letter by telling Python where it is"*) may receive a follow-up
+  probe instead of immediate credit — the overlap guard that blocks false credit for vague
+  answers also gates fully terminology-free paraphrases. The follow-up conversation usually
+  recovers the credit.
+- Automatic lecture concept extraction is structure + embedding heuristics, not semantic
+  understanding of the lecture; unstructured prose notes still extract worse than notes with
+  headings, and the faculty review step remains the authority. That review step is a design
+  feature, not an afterthought.
+- Evaluator thresholds were tuned on the calibration portion of the labelled set and checked
+  on a small held-out portion (~66 items); with a dataset this size the held-out numbers are
+  coarse, and none of it represents real students.
+- MCQ distractors come from the same lecture's material; a student who eliminates options by
+  recognising which concept a sentence belongs to can sometimes answer without deep
+  understanding — which is precisely why the knowledge check stays secondary to TeachBack.
 - Student self-reported confidence and perceived difficulty are subjective observations, not
   ground truth; they influence which activity is recommended but never assign a learning state.
 - Lecture pace/feedback responses are subjective and aggregated very simply.

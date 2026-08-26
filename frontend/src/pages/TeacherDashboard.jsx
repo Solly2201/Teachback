@@ -10,24 +10,35 @@ export default function TeacherDashboard() {
   const [evaluation, setEvaluation] = useState(null)
   const [error, setError] = useState(null)
 
+  // every aggregate is scoped by the selected subject on the backend —
+  // switching subject refetches, so no cross-subject data can appear here
   useEffect(() => {
-    api.teacherOverview().then(setData).catch((e) => setError(e.message))
+    if (!context.subject) return
+    setData(null)
+    api.teacherOverview(context.subject.id).then(setData).catch((e) => setError(e.message))
+  }, [context.subject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
     api.evaluation().then(setEvaluation).catch(() => {})
   }, [])
 
   if (error) return <div className="card p-6 text-red-700">Failed to load overview: {error}</div>
-  if (!data) return <div className="text-charcoal-light p-6">Loading class overview…</div>
+  if (!context.teachers) return <div className="text-charcoal-light p-6">Loading class overview…</div>
+  if (!data)
+    return (
+      <div className="space-y-5">
+        <div className="banner">Class Overview — {context.subject?.name || ''}</div>
+        <TeacherContextBar context={context} />
+        <div className="text-charcoal-light p-6">Loading class overview…</div>
+      </div>
+    )
 
   const maxCount = Math.max(...data.distribution.map((d) => d.count), 1)
   const maxMiscon = Math.max(...data.common_misconceptions.map((m) => m.count), 1)
-  const subjectName = context.subject?.name
-  const topicFeedback = (data.topic_feedback || []).filter(
-    (f) => !subjectName || f.subject_name === subjectName
-  )
+  const topicFeedback = data.topic_feedback || []
 
   return (
     <div className="space-y-5">
-      <div className="banner">Class Overview</div>
+      <div className="banner">Class Overview — {context.subject?.name || ''}</div>
       <TeacherContextBar context={context} />
       <div className="card p-4 flex items-center justify-between gap-4">
         <p className="text-sm text-charcoal-light">
@@ -40,7 +51,7 @@ export default function TeacherDashboard() {
       <div className="grid sm:grid-cols-3 gap-4">
         <div className="card p-5 text-center">
           <div className="text-3xl font-black text-brand tabular-nums">{data.student_count}</div>
-          <div className="text-xs uppercase tracking-wide text-charcoal-light mt-1">Students</div>
+          <div className="text-xs uppercase tracking-wide text-charcoal-light mt-1">Students in this subject</div>
         </div>
         <div className="card p-5 text-center">
           <div className="text-3xl font-black text-brand tabular-nums">{data.topic_stats.length}</div>
@@ -188,6 +199,49 @@ export default function TeacherDashboard() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {/* knowledge-check performance: MCQ and TeachBack shown side by side,
+          deliberately never merged into one "mastery" number */}
+      {(data.knowledge_checks || []).length > 0 && (
+        <div className="card">
+          <div className="card-header">Knowledge check performance</div>
+          <div className="p-4 grid md:grid-cols-2 gap-4">
+            {data.knowledge_checks.map((k) => (
+              <div key={k.id} className="border border-zinc-200 rounded-md p-4">
+                <div className="flex items-baseline justify-between gap-3">
+                  <div className="font-semibold text-sm text-charcoal">{k.name}</div>
+                  <div className="text-sm"><span className="font-bold text-charcoal tabular-nums">{k.avg_percent}%</span>
+                    <span className="text-charcoal-light text-xs"> avg · {k.attempts} attempt{k.attempts === 1 ? '' : 's'}</span>
+                  </div>
+                </div>
+                <table className="w-full text-xs mt-3">
+                  <thead>
+                    <tr className="text-left uppercase tracking-wide text-charcoal-light border-b border-zinc-100">
+                      <th className="py-1.5">Concept</th>
+                      <th className="py-1.5 text-right">Knowledge check</th>
+                      <th className="py-1.5 text-right">TeachBack demonstrated</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-50">
+                    {k.concepts.map((c) => (
+                      <tr key={c.name}>
+                        <td className="py-1.5 text-charcoal">{c.name}</td>
+                        <td className="py-1.5 text-right tabular-nums text-charcoal">{c.mcq_percent}%</td>
+                        <td className="py-1.5 text-right tabular-nums text-charcoal">
+                          {c.teachback_percent != null ? `${c.teachback_percent}%` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-[11px] text-charcoal-light mt-2">
+                  Two separate signals: what students could recognise (check) vs what they could explain (TeachBack).
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       )}

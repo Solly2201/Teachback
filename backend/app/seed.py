@@ -14,7 +14,8 @@ from .database import Base, SessionLocal, engine
 from .hmm.model import hmm_available, infer_sequence
 from .hmm.synthetic import generate_dataset
 from .models import (Activity, ActivityCompletion, Concept, ConceptRelationship,
-                     Lecture, Misconception, Observation, Response, Student, Subject,
+                     Lecture, Misconception, Observation, Quiz, QuizAnswer,
+                     QuizAttempt, QuizQuestion, Response, Student, Subject,
                      TeachSession, Teacher, Topic)
 from .seed_content import DEMO_STUDENTS, PYTHON_LECTURE, TEACHERS, TOPIC_SUBJECT, TOPICS
 from .states import STATE_NAMES
@@ -42,6 +43,9 @@ def _migrate():
         ("teach_sessions", "pace", "VARCHAR(20) DEFAULT ''"),
         ("teach_sessions", "feedback_choices", "JSON"),
         ("teach_sessions", "feedback_text", "TEXT DEFAULT ''"),
+        ("concepts", "facts", "JSON"),
+        ("concepts", "examples", "JSON"),
+        ("concepts", "source", "JSON"),
     ]
     with engine.connect() as conn:
         for table, col, ddl in additions:
@@ -58,7 +62,8 @@ def seed_db(force: bool = False) -> bool:
         if db.query(Topic).count() > 0 and not force:
             return False
         if force:
-            for model in (ActivityCompletion, Observation, Response, TeachSession, Activity,
+            for model in (QuizAnswer, QuizAttempt, QuizQuestion, Quiz,
+                          ActivityCompletion, Observation, Response, TeachSession, Activity,
                           Misconception, ConceptRelationship, Concept, Lecture, Student,
                           Topic, Subject, Teacher):
                 db.query(model).delete()
@@ -104,6 +109,35 @@ def seed_db(force: bool = False) -> bool:
             topics.append(topic)
         db.commit()
 
+        # --- teachers, subjects, and the sample lecture workflow ---
+        # (before observation seeding, so subject scoping can be exercised
+        # with realistic per-subject histories)
+        for tdata in TEACHERS:
+            teacher = Teacher(name=tdata["name"])
+            db.add(teacher)
+            db.flush()
+            for sname in tdata["subjects"]:
+                db.add(Subject(name=sname, teacher_id=teacher.id))
+        db.commit()
+        subjects = {s.name: s for s in db.query(Subject).all()}
+
+        # existing topics belong to the first teacher's subject
+        nn_subject = subjects.get(TOPIC_SUBJECT)
+        if nn_subject:
+            for topic in topics:
+                topic.subject_id = nn_subject.id
+            db.commit()
+
+        python_topic = _seed_python_lecture(db, subjects.get(PYTHON_LECTURE["subject"]))
+        db.commit()
+
+        # every seeded topic gets its generated Quick knowledge check (the
+        # same generation a published lecture gets; teachers can regenerate)
+        from .api.quiz import build_quiz_for_topic
+        for topic in topics:
+            build_quiz_for_topic(db, topic)
+        db.commit()
+
         # students: named demo students first, then background students
         rng = random.Random(11)
         students = []
@@ -122,14 +156,19 @@ def seed_db(force: bool = False) -> bool:
         mini = generate_dataset(n_students=len(students), seed=123)
         use_hmm = hmm_available()
         now = datetime.utcnow()
-        for student, synth in zip(students, mini["students"]):
+        for s_idx, (student, synth) in enumerate(zip(students, mini["students"])):
             seq = [s["features"] for s in synth["sessions"]]
             if use_hmm:
                 inf = infer_sequence(seq)
                 states = inf["states"]
             else:
                 states = [s["true_state"] for s in synth["sessions"]]
-            topic_cycle = rng.sample(topics, k=len(topics))
+            # every third student also takes the Python subject, so both
+            # subject dashboards have their own (non-overlapping) histories
+            pool = list(topics)
+            if python_topic is not None and s_idx % 3 == 0:
+                pool.append(python_topic)
+            topic_cycle = rng.sample(pool, k=len(pool))
             for t_idx, (sess, st) in enumerate(zip(synth["sessions"], states)):
                 days_ago = (len(seq) - t_idx) * rng.randint(2, 4)
                 obs_topic = topic_cycle[t_idx % len(topic_cycle)]
@@ -152,32 +191,12 @@ def seed_db(force: bool = False) -> bool:
                     )
                 )
         db.commit()
-
-        # --- teachers, subjects, and the sample lecture workflow ---
-        for tdata in TEACHERS:
-            teacher = Teacher(name=tdata["name"])
-            db.add(teacher)
-            db.flush()
-            for sname in tdata["subjects"]:
-                db.add(Subject(name=sname, teacher_id=teacher.id))
-        db.commit()
-        subjects = {s.name: s for s in db.query(Subject).all()}
-
-        # existing topics belong to the first teacher's subject
-        nn_subject = subjects.get(TOPIC_SUBJECT)
-        if nn_subject:
-            for topic in topics:
-                topic.subject_id = nn_subject.id
-            db.commit()
-
-        _seed_python_lecture(db, subjects.get(PYTHON_LECTURE["subject"]))
-        db.commit()
         return True
     finally:
         db.close()
 
 
-def _seed_python_lecture(db, subject) -> None:
+def _seed_python_lecture(db, subject) -> Topic | None:
     """Run the sample Python lecture through the REAL lecture pipeline.
 
     Material -> NLP preparation (suggestions stored verbatim) -> the curated
@@ -186,7 +205,7 @@ def _seed_python_lecture(db, subject) -> None:
     nothing is topic-specific.
     """
     if subject is None:
-        return
+        return None
     from .api.lectures import apply_draft_to_topic
     from .nlp.lecture_prep import prepare_lecture
 
@@ -207,11 +226,13 @@ def _seed_python_lecture(db, subject) -> None:
         material_text=lec_def["material"],
         objectives=lec_def["objectives"],
         suggestions=prep,
-        # the teacher's review: curated concepts/relationships/misconceptions
+        # the teacher's review: curated concepts/relationships/misconceptions/
+        # activities (light edits of the automatic suggestions)
         draft={
             "concepts": lec_def["reviewed_concepts"],
             "relationships": lec_def["reviewed_relationships"],
             "misconceptions": lec_def["reviewed_misconceptions"],
+            "activities": lec_def["reviewed_activities"],
         },
         status="draft",
     )
@@ -222,5 +243,9 @@ def _seed_python_lecture(db, subject) -> None:
     db.add(topic)
     apply_draft_to_topic(topic, lecture)
     db.flush()
+    # publish the knowledge check the same way the API publish endpoint does
+    from .api.quiz import build_quiz_for_topic
+    build_quiz_for_topic(db, topic)
     lecture.topic_id = topic.id
     lecture.status = "published"
+    return topic

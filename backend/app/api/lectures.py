@@ -23,10 +23,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import (Concept, ConceptRelationship, Lecture, Misconception,
-                      Subject, Teacher, Topic)
+from ..models import (Activity, Concept, ConceptRelationship, Lecture,
+                      Misconception, Subject, Teacher, Topic)
 from ..nlp.lecture_prep import extract_text, prepare_lecture
+from ..nlp.note_template import AI_PREP_PROMPT, NOTE_TEMPLATE
+from ..nlp.quiz_gen import generate_quiz_candidates, generate_quiz_questions
 from .helpers import topic_def
+from .quiz import build_quiz_for_topic
 
 router = APIRouter(prefix="/api", tags=["lectures"])
 
@@ -44,6 +47,14 @@ class LectureIn(BaseModel):
 class DraftConcept(BaseModel):
     name: str
     description: str = ""
+    facts: list[str] = Field(default_factory=list)
+    examples: list[str] = Field(default_factory=list)
+    source_section: str = ""
+    source_sentences: list[str] = Field(default_factory=list)
+    main_question: str = ""
+    easier_question: str = ""
+    probe_question: str = ""
+    application_question: str = ""
 
 
 class DraftRelationship(BaseModel):
@@ -51,6 +62,7 @@ class DraftRelationship(BaseModel):
     label: str = "relates to"
     target: str
     description: str = ""
+    contradiction: str = ""
 
 
 class DraftMisconception(BaseModel):
@@ -60,6 +72,24 @@ class DraftMisconception(BaseModel):
     probe_question: str = ""
 
 
+class DraftActivity(BaseModel):
+    target_state: str = "understanding"
+    kind: str = "practice"
+    title: str
+    description: str = ""
+    content: str = ""
+    question: str = ""
+
+
+class DraftQuizQuestion(BaseModel):
+    concept_name: str = ""
+    kind: str = "basic"
+    question: str
+    options: list[str]
+    correct_index: int = 0
+    explanation: str = ""
+
+
 class LectureUpdateIn(BaseModel):
     title: str | None = None
     description: str | None = None
@@ -67,6 +97,18 @@ class LectureUpdateIn(BaseModel):
     concepts: list[DraftConcept] | None = None
     relationships: list[DraftRelationship] | None = None
     misconceptions: list[DraftMisconception] | None = None
+    activities: list[DraftActivity] | None = None
+    quiz: list[DraftQuizQuestion] | None = None
+
+
+def _draft_topic_def(draft: dict, title: str) -> dict:
+    """A topic_def-shaped dict built from a lecture draft, for quiz generation."""
+    return {
+        "name": title,
+        "concepts": draft.get("concepts") or [],
+        "relationships": draft.get("relationships") or [],
+        "misconceptions": draft.get("misconceptions") or [],
+    }
 
 
 class ExtractIn(BaseModel):
@@ -101,6 +143,16 @@ def list_teachers(db: Session = Depends(get_db)):
          "subjects": [{"id": s.id, "name": s.name} for s in sorted(t.subjects, key=lambda s: s.id)]}
         for t in teachers
     ]
+
+
+@router.get("/lectures/prep-prompt")
+def prep_prompt():
+    """Recommended note format + the copyable external-AI preparation prompt.
+
+    TeachBack never calls an LLM: this endpoint only returns text the teacher
+    may paste into an external assistant of their own choosing.
+    """
+    return {"template": NOTE_TEMPLATE, "prompt": AI_PREP_PROMPT}
 
 
 @router.post("/lectures/extract")
@@ -154,11 +206,23 @@ def create_lecture(data: LectureIn, db: Session = Depends(get_db)):
         objectives=data.objectives, known_misconceptions=_known_misconceptions(db),
     )
     draft = {
-        "concepts": [{"name": c["name"], "description": c["description"]} for c in prep["concepts"]],
+        # the full evidence-carrying concept suggestions (facts, examples,
+        # provenance, drafted questions) become the editable draft
+        "concepts": [
+            {k: c.get(k) for k in ("name", "description", "facts", "examples",
+                                   "source_section", "source_sentences",
+                                   "main_question", "easier_question",
+                                   "probe_question", "application_question")}
+            for c in prep["concepts"]
+        ],
         "relationships": [{"source": r["source"], "label": r["label"], "target": r["target"],
                            "description": r["description"]} for r in prep["relationships"]],
         "misconceptions": [],  # suggestions must be explicitly accepted by the teacher
+        "activities": list(prep.get("activities", [])),
     }
+    # suggested knowledge-check questions, generated from the draft structure
+    # and reviewable/editable like everything else
+    draft["quiz"] = generate_quiz_questions(_draft_topic_def(draft, data.title))
     lec = Lecture(
         subject_id=subject.id, title=data.title, description=data.description,
         material_text=data.material_text, objectives=prep["objectives"],
@@ -189,6 +253,10 @@ def update_lecture(lecture_id: int, data: LectureUpdateIn, db: Session = Depends
                                   if r.source.strip() and r.target.strip()]
     if data.misconceptions is not None:
         draft["misconceptions"] = [m.model_dump() for m in data.misconceptions if m.name.strip()]
+    if data.activities is not None:
+        draft["activities"] = [a.model_dump() for a in data.activities if a.title.strip()]
+    if data.quiz is not None:
+        draft["quiz"] = [q.model_dump() for q in data.quiz if q.question.strip()]
     lec.draft = draft
     db.commit()
     db.refresh(lec)
@@ -219,14 +287,24 @@ def apply_draft_to_topic(topic: Topic, lec: Lecture) -> None:
     topic.concepts = [
         Concept(
             name=c["name"], description=c.get("description", ""),
-            main_question=MAIN_QUESTION_TEMPLATE.format(name=c["name"]),
+            main_question=c.get("main_question") or MAIN_QUESTION_TEMPLATE.format(name=c["name"]),
+            easier_question=c.get("easier_question", "") or "",
+            probe_question=c.get("probe_question", "") or "",
+            # the application question is optional extension material only —
+            # it is never required for demonstrating lecture understanding
+            application_question=c.get("application_question", "") or "",
+            facts=c.get("facts") or [],
+            examples=c.get("examples") or [],
+            source={"section": c.get("source_section", ""),
+                    "sentences": c.get("source_sentences") or []},
             position=i,
         )
         for i, c in enumerate(concepts)
     ]
     topic.relationships = [
         ConceptRelationship(source=r["source"], label=r.get("label", "relates to"),
-                            target=r["target"], description=r.get("description", ""), position=i)
+                            target=r["target"], description=r.get("description", ""),
+                            contradiction=r.get("contradiction", "") or "", position=i)
         for i, r in enumerate(draft.get("relationships") or [])
     ]
     topic.misconceptions = [
@@ -235,9 +313,15 @@ def apply_draft_to_topic(topic: Topic, lec: Lecture) -> None:
                       probe_question=m.get("probe_question", ""))
         for m in (draft.get("misconceptions") or [])
     ]
-    # activities intentionally stay empty here: the recommender builds
-    # deterministic template activities from the concepts, and the teacher
-    # can add custom activities later in Topic Management
+    # reviewed lecture activities become the topic's stored activities, so
+    # recommendations stay grounded in this lecture's own material
+    topic.activities = [
+        Activity(title=a["title"], description=a.get("description", ""),
+                 kind=a.get("kind", "practice"),
+                 target_state=a.get("target_state", "understanding"),
+                 content=a.get("content", ""), question=a.get("question", ""))
+        for a in (draft.get("activities") or [])
+    ]
 
 
 @router.post("/lectures/{lecture_id}/publish")
@@ -255,8 +339,53 @@ def publish_lecture(lecture_id: int, db: Session = Depends(get_db)):
         db.add(topic)
     apply_draft_to_topic(topic, lec)
     db.flush()
+    # publish the reviewed knowledge-check questions with the topic (fall back
+    # to fresh generation from the published structure if the draft has none)
+    reviewed_quiz = (lec.draft or {}).get("quiz")
+    build_quiz_for_topic(db, topic, questions=reviewed_quiz if reviewed_quiz else None)
     lec.topic_id = topic.id
     lec.status = "published"
     db.commit()
     db.refresh(topic)
     return {"lecture": lecture_out(lec, include_material=False), "topic": topic_def(topic)}
+
+
+class RegenerateIn(BaseModel):
+    index: int | None = None  # regenerate one question, or all when omitted
+
+
+@router.post("/lectures/{lecture_id}/quiz/regenerate")
+def regenerate_quiz(lecture_id: int, data: RegenerateIn, db: Session = Depends(get_db)):
+    """Regenerate the drafted quiz (all questions, or one by index).
+
+    Single-question regeneration picks the next unused valid candidate,
+    preferring the same kind, so the teacher can cycle through alternatives.
+    """
+    lec = db.get(Lecture, lecture_id)
+    if not lec:
+        raise HTTPException(404, "Lecture not found")
+    draft = dict(lec.draft or {})
+    tdef = _draft_topic_def(draft, lec.title)
+    current = list(draft.get("quiz") or [])
+
+    if data.index is None:
+        draft["quiz"] = generate_quiz_questions(tdef)
+    else:
+        if not 0 <= data.index < len(current):
+            raise HTTPException(400, "No question at that index")
+        used = {q["question"].strip().lower() for q in current}
+        old = current[data.index]
+        candidates = generate_quiz_candidates(tdef)
+        replacement = next(
+            (c for c in sorted(candidates, key=lambda c: c["kind"] != old.get("kind"))
+             if c["question"].strip().lower() not in used),
+            None,
+        )
+        if replacement is None:
+            raise HTTPException(400, "No alternative question available for this material")
+        current[data.index] = replacement
+        draft["quiz"] = current
+    lec.draft = draft
+    db.commit()
+    db.refresh(lec)
+    return lecture_out(lec)

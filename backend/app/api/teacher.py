@@ -1,4 +1,11 @@
-"""Teacher dashboard aggregates and meta/evaluation endpoints."""
+"""Teacher dashboard aggregates and meta/evaluation endpoints.
+
+Every faculty-facing aggregate is scoped by subject: when the teacher/subject
+switcher selects a subject, only observations, sessions, topics, misconceptions
+and feedback belonging to that subject's topics are aggregated. Scoping happens
+in these queries, not in the frontend, so one subject's data can never leak
+into another subject's dashboard.
+"""
 import json
 from collections import Counter, defaultdict
 
@@ -7,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from ..config import EVAL_RESULTS_PATH, HMM_MAPPING_PATH
 from ..database import get_db
-from ..models import Observation, Student, TeachSession, Topic
+from ..models import (Observation, Quiz, QuizAnswer, QuizAttempt, Student,
+                      TeachSession, Topic)
 from ..states import FEATURE_NAMES, STATE_KEYS, STATE_NAMES, STATE_PROFILES
 from .helpers import observation_out
 
@@ -15,17 +23,32 @@ router = APIRouter(prefix="/api", tags=["teacher", "meta"])
 
 
 @router.get("/teacher/overview")
-def teacher_overview(db: Session = Depends(get_db)):
-    students = db.query(Student).all()
-    observations = (
-        db.query(Observation).order_by(Observation.created_at, Observation.id).all()
-    )
+def teacher_overview(subject_id: int | None = None, db: Session = Depends(get_db)):
+    """Class overview. With subject_id, every aggregate is scoped to that
+    subject's topics — the cross-subject isolation the switcher promises."""
+    topic_q = db.query(Topic).order_by(Topic.id)
+    if subject_id is not None:
+        topic_q = topic_q.filter(Topic.subject_id == subject_id)
+    topics = topic_q.all()
+    topic_ids = {t.id for t in topics}
+
+    obs_q = db.query(Observation).order_by(Observation.created_at, Observation.id)
+    if subject_id is not None:
+        obs_q = obs_q.filter(Observation.topic_id.in_(topic_ids))
+    observations = obs_q.all()
 
     by_student: dict[int, list[Observation]] = defaultdict(list)
     for o in observations:
         by_student[o.student_id].append(o)
 
-    # current state distribution (latest observation per student)
+    # students who have interacted with this subject (all students when unscoped)
+    if subject_id is None:
+        students = db.query(Student).all()
+    else:
+        students = db.query(Student).filter(Student.id.in_(by_student.keys())).all()
+    id_to_name = {s.id: s.name for s in students}
+
+    # current state distribution (latest in-subject observation per student)
     dist = Counter()
     for obs_list in by_student.values():
         if obs_list and obs_list[-1].state_index is not None:
@@ -37,7 +60,7 @@ def teacher_overview(db: Session = Depends(get_db)):
         for i in range(5)
     ]
 
-    # common misconceptions across all observations
+    # common misconceptions across this subject's observations
     miscon_counts = Counter()
     for o in observations:
         for name in o.misconception_names or []:
@@ -54,16 +77,14 @@ def teacher_overview(db: Session = Depends(get_db)):
             recent = sum(states[-2:]) / 2
             before = sum(states[-4:-2]) / 2
             if recent - before <= -1:
-                student = next(s for s in students if s.id == sid)
                 declining.append(
-                    {"id": sid, "name": student.name,
+                    {"id": sid, "name": id_to_name.get(sid, "?"),
                      "from_state": STATE_NAMES[round(before)], "to_state": STATE_NAMES[states[-1]],
                      "drop": round(before - recent, 1)}
                 )
     declining.sort(key=lambda d: -d["drop"])
 
     # topic-level statistics
-    topics = db.query(Topic).all()
     topic_stats = []
     for t in topics:
         t_obs = [o for o in observations if o.topic_id == t.id]
@@ -84,7 +105,10 @@ def teacher_overview(db: Session = Depends(get_db)):
 
     # lecture feedback aggregates (confidence/difficulty from live
     # observation features; pace + request chips from completed sessions)
-    completed_sessions = db.query(TeachSession).filter(TeachSession.completed).all()
+    session_q = db.query(TeachSession).filter(TeachSession.completed)
+    if subject_id is not None:
+        session_q = session_q.filter(TeachSession.topic_id.in_(topic_ids))
+    completed_sessions = session_q.all()
     sessions_by_topic = defaultdict(list)
     for ts in completed_sessions:
         sessions_by_topic[ts.topic_id].append(ts)
@@ -109,21 +133,62 @@ def teacher_overview(db: Session = Depends(get_db)):
             "recent_comments": comments,
         })
 
+    # knowledge-check performance per topic, kept SEPARATE from TeachBack
+    # evidence: for each concept both the MCQ correctness rate and the share
+    # of completed TeachBack sessions that demonstrated the concept are shown
+    # — deliberately two numbers, never one "mastery" score
+    knowledge_checks = []
+    for t in topics:
+        t_quiz = db.query(Quiz).filter(Quiz.topic_id == t.id).first()
+        if not t_quiz:
+            continue
+        attempts = db.query(QuizAttempt).filter(QuizAttempt.quiz_id == t_quiz.id).all()
+        if not attempts:
+            continue
+        answers = (db.query(QuizAnswer)
+                   .filter(QuizAnswer.attempt_id.in_([a.id for a in attempts])).all())
+        q_concept = {q.id: (q.concept_name or "General") for q in t_quiz.questions}
+        mcq: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # concept -> [correct, total]
+        for ans in answers:
+            bucket = mcq[q_concept.get(ans.question_id, "General")]
+            bucket[1] += 1
+            bucket[0] += int(ans.correct)
+        # TeachBack demonstration rate per concept from completed sessions
+        tb: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+        for ts in sessions_by_topic.get(t.id, []):
+            for c in (ts.plan or {}).get("concepts", []):
+                bucket = tb[c["name"]]
+                bucket[1] += 1
+                bucket[0] += int(c.get("status") in ("covered", "partial"))
+        total_correct = sum(v[0] for v in mcq.values())
+        total_answers = sum(v[1] for v in mcq.values()) or 1
+        knowledge_checks.append({
+            "id": t.id, "name": t.name,
+            "attempts": len(attempts),
+            "avg_percent": round(100 * total_correct / total_answers),
+            "concepts": [
+                {"name": name,
+                 "mcq_percent": round(100 * c / max(n, 1)), "mcq_n": n,
+                 "teachback_percent": (round(100 * tb[name][0] / tb[name][1])
+                                       if tb.get(name, [0, 0])[1] else None),
+                 "teachback_n": tb.get(name, [0, 0])[1]}
+                for name, (c, n) in sorted(mcq.items())
+            ],
+        })
+
     recent = [observation_out(o) for o in observations[-10:]][::-1]
-    id_to_name = {s.id: s.name for s in students}
     for r, o in zip(recent, observations[-10:][::-1]):
         r["student_name"] = id_to_name.get(o.student_id, "?")
 
-    live_sessions = db.query(TeachSession).filter(TeachSession.completed).count()
-
     return {
         "student_count": len(students),
-        "live_session_count": live_sessions,
+        "live_session_count": len(completed_sessions),
         "distribution": distribution,
         "common_misconceptions": common_misconceptions,
         "declining_students": declining[:8],
         "topic_stats": topic_stats,
         "topic_feedback": topic_feedback,
+        "knowledge_checks": knowledge_checks,
         "recent_interactions": recent,
     }
 

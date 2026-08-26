@@ -17,7 +17,8 @@ def topic_def(topic: Topic) -> dict:
         "concepts": [
             {"id": c.id, "name": c.name, "description": c.description,
              "main_question": c.main_question, "easier_question": c.easier_question,
-             "probe_question": c.probe_question, "application_question": c.application_question}
+             "probe_question": c.probe_question, "application_question": c.application_question,
+             "facts": c.facts or [], "examples": c.examples or [], "source": c.source or {}}
             for c in topic.concepts
         ],
         "misconceptions": [

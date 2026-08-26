@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..hmm.model import hmm_available, infer_sequence
-from ..models import Observation, Response, Student, TeachSession, Topic
+from ..models import Observation, Quiz, Response, Student, TeachSession, Topic
 from ..nlp.analyzer import analyze_response, merge_session_analyses, targeted_concept_check
 from ..nlp.conversation import (MAX_QUESTIONS, _update_relationships, build_plan,
                                 first_question, play_turn, timeline_out)
@@ -115,7 +115,8 @@ def respond(session_id: int, data: RespondIn, db: Session = Depends(get_db)):
             None,
         )
         if cdef:
-            analysis["target_check"] = targeted_concept_check(data.text, cdef)
+            analysis["target_check"] = targeted_concept_check(
+                data.text, cdef, topic_name=tdef.get("name", ""))
 
     prev = session.responses[-1].analysis.get("turn", {}).get("followup") if session.responses else None
     prompt = (prev or {}).get("text") or (first_question(plan, tdef)["text"])
@@ -295,12 +296,24 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         o.state_label = STATE_NAMES[int(s_idx)]
     db.commit()
 
+    # fact-level evidence: which reviewed lecture facts did the student
+    # express anywhere in the session (conversation or takeaway summary)?
+    facts_by_concept: dict[str, list[str]] = {}
+    for a in analyses + ([summary_analysis] if summary_analysis is not None else []):
+        for c in a.get("concepts", []):
+            bucket = facts_by_concept.setdefault(c["name"], [])
+            for f in c.get("facts_matched") or []:
+                if f not in bucket:
+                    bucket.append(f)
+
     # concept summary from the conversation plan (falls back to NLP statuses)
     plan_concepts = plan.get("concepts") or []
     if plan_concepts:
         status_map = {"covered": "covered", "partial": "partial", "unclear": "unclear", "pending": "missing"}
         concept_summary = [
-            {"name": c["name"], "status": status_map.get(c["status"], "missing")} for c in plan_concepts
+            {"name": c["name"], "status": status_map.get(c["status"], "missing"),
+             "facts_matched": facts_by_concept.get(c["name"], [])}
+            for c in plan_concepts
         ]
     else:
         best: dict = {}
@@ -349,6 +362,8 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
     if relationship_summary:
         evidence_notes.append(
             f"{len(rels_demonstrated)}/{len(relationship_summary)} key relationships demonstrated")
+    evidence_notes += [f"Mentioned from the lecture: {f}"
+                       for facts in facts_by_concept.values() for f in facts][:2]
     evidence_notes += [f"Needs clarification: {name}" for name in needs_clarification[:2]]
     evidence_notes += [f"Connection needing clarification: {r['source']} → {r['target']}" for r in rels_unclear[:2]]
     evidence_notes += [f"Misconception resolved: {m}" for m in resolved]
@@ -366,8 +381,15 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         for m in tdef.get("misconceptions", []) if m["name"] in detected
     ]
 
+    # the optional Quick knowledge check for this topic (secondary evidence;
+    # offered after the conversation + takeaway, never required)
+    topic_quiz = db.query(Quiz).filter(Quiz.topic_id == session.topic_id).first()
+    quiz_info = ({"quiz_id": topic_quiz.id, "n_questions": len(topic_quiz.questions)}
+                 if topic_quiz and topic_quiz.questions else None)
+
     return {
         "session_id": session.id,
+        "quiz": quiz_info,
         "observation": observation_out(obs),
         "session_features": dict(zip(FEATURE_NAMES, features)),
         "concept_summary": concept_summary,

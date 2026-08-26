@@ -1,0 +1,90 @@
+"""Regression tests for Problem A: teacher/subject scoping.
+
+The Python subject dashboard must never show Neural Networks data (and vice
+versa). Scoping must happen in the backend queries, not by frontend filtering.
+"""
+import pytest
+from fastapi.testclient import TestClient
+
+from app.hmm.model import hmm_available
+from app.main import app
+
+client = TestClient(app)
+
+
+def _subject_ids():
+    teachers = client.get("/api/teachers").json()
+    subjects = {s["name"]: s["id"] for t in teachers for s in t["subjects"]}
+    return subjects["Neural Networks"], subjects["Python Programming"]
+
+
+def _topic_names(subject_id):
+    return {t["name"] for t in client.get(f"/api/topics?subject_id={subject_id}").json()}
+
+
+def test_overview_topic_stats_scoped():
+    nn_id, py_id = _subject_ids()
+    nn_names = _topic_names(nn_id)
+    py_names = _topic_names(py_id)
+    assert nn_names and py_names and not (nn_names & py_names)
+
+    nn = client.get(f"/api/teacher/overview?subject_id={nn_id}").json()
+    py = client.get(f"/api/teacher/overview?subject_id={py_id}").json()
+
+    assert {t["name"] for t in nn["topic_stats"]} <= nn_names
+    assert {t["name"] for t in py["topic_stats"]} <= py_names
+    # the specific reported bug: NN topics visible under the Python subject
+    assert not any(t["name"] in nn_names for t in py["topic_stats"])
+
+
+def test_overview_recent_interactions_scoped():
+    nn_id, py_id = _subject_ids()
+    nn_names = _topic_names(nn_id)
+    py_names = _topic_names(py_id)
+    py = client.get(f"/api/teacher/overview?subject_id={py_id}").json()
+    nn = client.get(f"/api/teacher/overview?subject_id={nn_id}").json()
+    assert all(o["topic_name"] in py_names for o in py["recent_interactions"])
+    assert all(o["topic_name"] in nn_names for o in nn["recent_interactions"])
+
+
+def test_overview_misconceptions_scoped():
+    """Misconception aggregates only come from the subject's own topics."""
+    nn_id, py_id = _subject_ids()
+    nn_topics = client.get(f"/api/topics?subject_id={nn_id}").json()
+    nn_miscons = set()
+    for t in nn_topics:
+        detail = client.get(f"/api/topics/{t['id']}").json()
+        nn_miscons |= {m["name"] for m in detail["misconceptions"]}
+    py = client.get(f"/api/teacher/overview?subject_id={py_id}").json()
+    assert not any(m["name"] in nn_miscons for m in py["common_misconceptions"])
+
+
+@pytest.mark.skipif(not hmm_available(), reason="HMM not trained")
+def test_live_session_appears_only_in_its_subject():
+    """A completed session on a Python topic shows up on the Python dashboard
+    and never on the Neural Networks dashboard."""
+    nn_id, py_id = _subject_ids()
+    py_topics = client.get(f"/api/topics?subject_id={py_id}").json()
+    assert py_topics, "Python subject has no topics seeded"
+    topic_id = py_topics[0]["id"]
+    students = client.get("/api/students").json()
+    student = next(s for s in students if s["name"] == "Shreshtha Bindal")
+
+    before_nn = client.get(f"/api/teacher/overview?subject_id={nn_id}").json()
+    start = client.post("/api/sessions/start",
+                        json={"student_id": student["id"], "topic_id": topic_id}).json()
+    sid = start["session_id"]
+    client.post(f"/api/sessions/{sid}/respond",
+                json={"text": "Strings are basically text stored between quotes."})
+    client.post(f"/api/sessions/{sid}/finish",
+                json={"attention": 7, "confidence": 6, "difficulty": 4})
+
+    after_py = client.get(f"/api/teacher/overview?subject_id={py_id}").json()
+    after_nn = client.get(f"/api/teacher/overview?subject_id={nn_id}").json()
+
+    py_names = _topic_names(py_id)
+    assert any(o["topic_name"] in py_names and o["source"] == "live"
+               for o in after_py["recent_interactions"])
+    # the NN dashboard is untouched by the Python session
+    assert after_nn["live_session_count"] == before_nn["live_session_count"]
+    assert all(o["topic_name"] in _topic_names(nn_id) for o in after_nn["recent_interactions"])

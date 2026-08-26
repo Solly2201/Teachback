@@ -25,15 +25,27 @@ import re
 # score (concept name prefixed to the answer) is only trusted when the answer
 # shares at least one content word with the concept text — the shared prefix
 # otherwise inflates similarity for any text, including "I don't know".
-TARGET_COVERED_T = 0.58
-TARGET_PARTIAL_T = 0.45
-CTX_COVERED_T = 0.66
-CTX_PARTIAL_T = 0.58
-MIN_WORDS = 3
+# Calibrated against the labelled dataset in data/nlp/labeled_answers.json
+# (python scripts/evaluate_nlp.py --tune): these values maximised evidence-
+# level accuracy (0.83) without hurting misconception precision (1.0).
+TARGET_COVERED_T = 0.54
+TARGET_PARTIAL_T = 0.42
+CTX_COVERED_T = 0.62
+CTX_PARTIAL_T = 0.55
+MIN_WORDS = 2  # a two-word answer ("Text data.") can still be real evidence
 MAX_QUESTIONS = 12
 MAX_REL_QUESTIONS = 2  # at most this many relationship questions per session
 
 GIVE_UP_PHRASES = ("i don't know", "i dont know", "idk", "no idea", "not sure", "no clue")
+
+# Markers of an analogy/metaphor answer. An analogy that is semantically in
+# the neighbourhood of the concept is treated as potentially meaningful
+# evidence: instead of rejecting it (no shared words) or blindly accepting it,
+# the tutor asks the student to connect it back to the concept.
+ANALOGY_MARKERS = ("it's like", "its like", "is like", "kind of like", "sort of like",
+                   "as if", "imagine", "think of it as", "similar to", "just like")
+ANALOGY_MIN_PLAIN = 0.38
+ANALOGY_MIN_CTX = 0.50
 
 # A short confirmation of a yes/no-style question ("Does the gradient tell us
 # how the loss changes?" -> "yes") is positive evidence, but not enough for
@@ -187,6 +199,11 @@ def _verdict(analysis: dict, entry: dict, confirm_context: bool = False) -> str:
         return "correct"
     if plain >= TARGET_PARTIAL_T or (ctx >= CTX_PARTIAL_T and overlap >= 1):
         return "partial"
+    # an analogy in the neighbourhood of the concept: not credit, not a
+    # rejection — the tutor will ask the student to connect it back
+    if any(p in text for p in ANALOGY_MARKERS) and (
+            plain >= ANALOGY_MIN_PLAIN or ctx >= ANALOGY_MIN_CTX):
+        return "analogy"
     return "unclear"
 
 
@@ -474,6 +491,25 @@ def play_turn(plan: dict, analysis: dict, topic_def: dict) -> tuple[dict, dict]:
         # evidence (they agree with the idea but haven't explained it)
         cur["status"] = "partial"
         result = _advance(plan, topic_def, ACK_AFFIRM_ACCEPT)
+        return plan, {**result, **extras}
+
+    if verdict == "analogy":
+        if cur["attempts"] == 0:
+            cur["attempts"] = 1
+            plan["asked_kind"] = "probe"
+            plan["question_no"] += 1
+            return plan, {
+                "feedback": "Interesting analogy — I can see the picture you're drawing.",
+                "followup": {"kind": "probe",
+                             "text": f"Can you connect that back to {cur['name']} — what does it mean here?",
+                             "concept": cur["name"],
+                             "reason": "The analogy sounds related, so the student is asked to tie it back to the concept rather than being marked right or wrong."},
+                "done": False,
+                **extras,
+            }
+        # a second analogy without the connection stays inconclusive
+        cur["status"] = "unclear"
+        result = _advance(plan, topic_def, _pick(ACK_MOVE_ON, qn))
         return plan, {**result, **extras}
 
     if verdict == "partial":

@@ -35,9 +35,10 @@ def test_different_terminology_not_rejected():
     assert _judge("It shows how sensitive the error is to a weight.") in ("correct", "partial")
 
 
-# An analogy with no shared content words gets no automatic credit — the
-# tutor responds with an easier question instead of marking it right or wrong
-def test_analogy_without_overlap_gets_easier_question():
+# An analogy gets no automatic credit and no rejection: the tutor asks the
+# student to connect it back to the concept (or takes a smaller step) —
+# it is never simply marked "correct" or treated as a misconception.
+def test_analogy_gets_connect_back_followup_not_credit():
     text = "It's like checking which direction makes the error go up or down."
     analysis = analyze_response(text, BACKPROP)
     analysis["target_check"] = targeted_concept_check(text, GRADIENT)
@@ -45,8 +46,26 @@ def test_analogy_without_overlap_gets_easier_question():
     plan["current"] = 1  # Gradient is the current concept
     plan["concepts"][0]["status"] = "covered"
     plan, turn = play_turn(plan, analysis, BACKPROP)
-    assert turn["followup"]["kind"] == "easier"
+    assert turn["followup"]["kind"] in ("probe", "easier")
+    assert plan["concepts"][1]["status"] == "pending"  # no credit yet
     assert analysis["detected_misconceptions"] == []
+
+
+# An on-track analogy followed by the actual connection earns the concept
+def test_analogy_then_connection_earns_credit():
+    plan = build_plan(BACKPROP)
+    plan["current"] = 1
+    plan["concepts"][0]["status"] = "covered"
+    text = "It's like feeling which way a hill slopes when you move a weight a little."
+    analysis = analyze_response(text, BACKPROP)
+    analysis["target_check"] = targeted_concept_check(text, GRADIENT)
+    plan, turn = play_turn(plan, analysis, BACKPROP)
+    assert turn["followup"] is not None
+    followup_text = "The slope is the gradient: it tells us how the loss changes when we change the weight."
+    followup = analyze_response(followup_text, BACKPROP)
+    followup["target_check"] = targeted_concept_check(followup_text, GRADIENT)
+    plan, _ = play_turn(plan, followup, BACKPROP)
+    assert plan["concepts"][1]["status"] in ("covered", "partial")
 
 
 # D. A known misconception is detected as a wrong relationship, not a keyword

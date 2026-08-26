@@ -40,9 +40,14 @@ export const api = {
     request(`/sessions/${sessionId}/respond`, { method: 'POST', body: JSON.stringify({ text }) }),
   finish: (sessionId, report) =>
     request(`/sessions/${sessionId}/finish`, { method: 'POST', body: JSON.stringify(report) }),
+  topicQuiz: (topicId) => request(`/topics/${topicId}/quiz`),
+  submitQuiz: (quizId, data) => request(`/quiz/${quizId}/submit`, { method: 'POST', body: JSON.stringify(data) }),
+  regenerateQuiz: (lectureId, index) =>
+    request(`/lectures/${lectureId}/quiz/regenerate`, { method: 'POST', body: JSON.stringify({ index }) }),
   activity: (id) => request(`/activities/${id}`),
   completeActivity: (data) => request('/activities/complete', { method: 'POST', body: JSON.stringify(data) }),
-  teacherOverview: () => request('/teacher/overview'),
+  teacherOverview: (subjectId) => request(`/teacher/overview${subjectId ? `?subject_id=${subjectId}` : ''}`),
+  prepPrompt: () => request('/lectures/prep-prompt'),
   metaStates: () => request('/meta/states'),
   evaluation: () => request('/meta/evaluation'),
 }

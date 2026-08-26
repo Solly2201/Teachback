@@ -114,6 +114,13 @@ class Concept(Base):
     easier_question: Mapped[str] = mapped_column(Text, default="")
     probe_question: Mapped[str] = mapped_column(Text, default="")
     application_question: Mapped[str] = mapped_column(Text, default="")
+    # Important facts a student may mention as evidence ("Indexes start at 0."),
+    # lecture examples, and provenance ({"section", "sentences"}) — all taken
+    # from the reviewed lecture draft so evaluation and explanations can point
+    # back at the actual source material.
+    facts: Mapped[list] = mapped_column(JSON, default=list)
+    examples: Mapped[list] = mapped_column(JSON, default=list)
+    source: Mapped[dict] = mapped_column(JSON, default=dict)
     position: Mapped[int] = mapped_column(Integer, default=0)
 
     topic: Mapped["Topic"] = relationship(back_populates="concepts")
@@ -196,6 +203,79 @@ class ActivityCompletion(Base):
 
     student: Mapped["Student"] = relationship()
     topic: Mapped["Topic"] = relationship()
+
+
+class Quiz(Base):
+    """The optional "Quick knowledge check" for a topic: exactly one quiz per
+    topic, holding the teacher-reviewed MCQ questions. It is SECONDARY
+    evidence — TeachBack (explaining in your own words) stays primary."""
+
+    __tablename__ = "quizzes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    topic_id: Mapped[int] = mapped_column(ForeignKey("topics.id"))
+    title: Mapped[str] = mapped_column(String(200), default="Quick knowledge check")
+
+    topic: Mapped["Topic"] = relationship()
+    questions: Mapped[list["QuizQuestion"]] = relationship(
+        back_populates="quiz", cascade="all, delete-orphan", order_by="QuizQuestion.position"
+    )
+
+
+class QuizQuestion(Base):
+    """One single-answer MCQ, grounded in the teacher-reviewed material.
+
+    `concept_name` ties the question to a concept for concept-level evidence
+    (stored by name so it survives topic re-publishing, which replaces
+    Concept rows). `kind` records the intended difficulty mix: basic /
+    application / misconception / relationship.
+    """
+
+    __tablename__ = "quiz_questions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"))
+    concept_name: Mapped[str] = mapped_column(String(150), default="")
+    kind: Mapped[str] = mapped_column(String(30), default="basic")
+    question: Mapped[str] = mapped_column(Text, default="")
+    options: Mapped[list] = mapped_column(JSON, default=list)  # exactly 4 strings
+    correct_index: Mapped[int] = mapped_column(Integer, default=0)
+    explanation: Mapped[str] = mapped_column(Text, default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    quiz: Mapped["Quiz"] = relationship(back_populates="questions")
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quiz_id: Mapped[int] = mapped_column(ForeignKey("quizzes.id"))
+    student_id: Mapped[int] = mapped_column(ForeignKey("students.id"))
+    # the TeachBack session this check followed, for combined evidence
+    session_id: Mapped[int] = mapped_column(ForeignKey("teach_sessions.id"), nullable=True)
+    n_correct: Mapped[int] = mapped_column(Integer, default=0)
+    n_questions: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    quiz: Mapped["Quiz"] = relationship()
+    student: Mapped["Student"] = relationship()
+    answers: Mapped[list["QuizAnswer"]] = relationship(
+        back_populates="attempt", cascade="all, delete-orphan"
+    )
+
+
+class QuizAnswer(Base):
+    __tablename__ = "quiz_answers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("quiz_attempts.id"))
+    question_id: Mapped[int] = mapped_column(ForeignKey("quiz_questions.id"))
+    selected_index: Mapped[int] = mapped_column(Integer, default=-1)
+    correct: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    attempt: Mapped["QuizAttempt"] = relationship(back_populates="answers")
+    question: Mapped["QuizQuestion"] = relationship()
 
 
 class TeachSession(Base):

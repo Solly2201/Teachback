@@ -31,26 +31,34 @@ def test_teachers_and_subjects_listed():
     assert any(s["name"] == "Neural Networks" for s in by_name["Prof. Meera Krishnan"]["subjects"])
 
 
-# 2. The Python sample lecture was seeded through the real pipeline
+# 2. The Python sample lecture (Strings) was seeded through the real pipeline
 def test_python_sample_lecture_seeded():
     subjects, _ = _subjects()
     lectures = client.get(f"/api/lectures?subject_id={subjects['Python Programming']['id']}").json()
     assert len(lectures) >= 1
-    lec = client.get(f"/api/lectures/{lectures[0]['id']}").json()
+    seeded = next(l for l in lectures if l["title"] == "Strings in Python")
+    lec = client.get(f"/api/lectures/{seeded['id']}").json()
     assert lec["status"] == "published"
     assert lec["topic_id"] is not None
     # the NLP suggestions were actually computed from the material (not bypassed)
     assert lec["suggestions"]["concepts"], "no NLP suggestions stored"
     suggested = {c["name"] for c in lec["suggestions"]["concepts"]}
-    assert "Variables" in suggested
+    assert {"Strings", "Indexing", "Slicing"} <= suggested
     # the reviewed draft is the teacher-curated version
     reviewed = {c["name"] for c in lec["draft"]["concepts"]}
-    assert {"Variables", "Assignment", "Data types", "Operators", "Expressions"} <= reviewed
+    assert {"Strings", "String assignment", "Characters", "Indexing", "Slicing",
+            "split() and join()"} <= reviewed
     assert lec["objectives"], "learning objectives missing"
-    # published topic carries the reviewed concepts
+    # published topic carries the reviewed concepts, with facts and provenance
     topic = client.get(f"/api/topics/{lec['topic_id']}").json()
     assert {c["name"] for c in topic["concepts"]} == reviewed
     assert topic["subject_name"] == "Python Programming"
+    indexing = next(c for c in topic["concepts"] if c["name"] == "Indexing")
+    assert "Indexes start at 0 in Python." in indexing["facts"]
+    assert indexing["source"]["section"] == "Indexing"
+    # the reviewed activities were published with the topic
+    assert topic["activities"], "reviewed lecture activities missing from topic"
+    assert any("slicing" in a["title"].lower() for a in topic["activities"])
 
 
 # 3. Subject scoping: one teacher's topics don't leak into another subject
@@ -61,8 +69,8 @@ def test_topics_scoped_by_subject():
     nn_names = {t["name"] for t in nn}
     py_names = {t["name"] for t in py}
     assert "Backpropagation" in nn_names and "Backpropagation" not in py_names
-    assert any("Python Basics" in n for n in py_names)
-    assert not any("Python Basics" in n for n in nn_names)
+    assert any("Strings" in n for n in py_names)
+    assert not any("Strings" in n for n in nn_names)
 
 
 # 4. Creating a lecture extracts candidate concepts + objectives from material

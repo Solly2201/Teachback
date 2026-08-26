@@ -8,7 +8,12 @@ embedded with a pretrained sentence-transformer. We then compute:
 
 * concept_coverage      - for each required concept, the best cosine similarity
                           between any student sentence and the concept's
-                          description. >= COVERED_T counts as demonstrated,
+                          reference texts. A concept is represented by SEVERAL
+                          texts — its meaning plus each teacher-reviewed
+                          "important fact" from the lecture — so a student who
+                          says "the first position is zero" matches the fact
+                          "Indexes start at 0" even with no shared textbook
+                          wording. >= COVERED_T counts as demonstrated,
                           a band below counts as partially demonstrated.
 * misconception_score   - each known misconception is stored as the wrong claim
                           plus a correct "clarification". A sentence is flagged
@@ -32,6 +37,8 @@ from .embedder import cosine_matrix, embed
 # evaluation/evaluate.py for the resulting precision/recall.
 CONCEPT_COVERED_T = 0.62   # similarity at which a concept counts as demonstrated
 CONCEPT_PARTIAL_T = 0.56   # partial credit band
+FACT_MATCH_T = 0.60        # a specific lecture fact counts as mentioned
+FACT_LEX_T = 0.30          # ...or this similarity plus a shared content word
 MISCONCEPTION_T = 0.65     # minimum similarity to the wrong claim to flag it
 MISCONCEPTION_MARGIN = 0.08  # must beat similarity to the correction by this
 
@@ -69,9 +76,16 @@ def split_sentences(text: str) -> list[str]:
     return [s for s in sentences if len(s.split()) >= 2] or ([text] if text else [])
 
 
+_DIGIT_WORDS = {"0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+                "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"}
+
+
 def content_words(text: str) -> list[str]:
+    """Content words, with lone digits normalised to their word form so that
+    "starts at 0" and "the first position is zero" share the word "zero"."""
     words = re.findall(r"[a-zA-Z][a-zA-Z\-']+", text.lower())
-    return [w for w in words if w not in _STOPWORDS and len(w) > 2]
+    digits = [_DIGIT_WORDS[d] for d in re.findall(r"(?<![\w.])(\d)(?![\w.])", text)]
+    return [w for w in words if w not in _STOPWORDS and len(w) > 2] + digits
 
 
 def _word_match(a: str, b: str) -> bool:
@@ -105,21 +119,29 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     misconceptions = topic_def.get("misconceptions", [])
     relationships = topic_def.get("relationships", [])
 
-    # Build one embedding batch for everything to keep this fast.
-    concept_texts = [f"{c['name']}: {c['description']}" for c in concepts]
+    # Build one embedding batch for everything to keep this fast. Each concept
+    # contributes several reference texts: its meaning, plus each reviewed
+    # "important fact" from the lecture (so simple, fact-level explanations
+    # still match), all prefixed with the concept name for context.
+    concept_refs: list[list[str]] = []
+    for c in concepts:
+        refs = [f"{c['name']}: {c['description']}"]
+        refs += [f"{c['name']}: {f}" for f in (c.get("facts") or [])[:4]]
+        concept_refs.append(refs)
+    flat_concept_texts = [t for refs in concept_refs for t in refs]
     miscon_texts = [m["description"] for m in misconceptions]
     clar_texts = [m.get("clarification", "") or m["description"] for m in misconceptions]
     rel_texts = [r["description"] for r in relationships]
     ref_text = topic_def.get("reference_explanation", "") or topic_def.get("name", "")
 
-    to_embed = sentences + [text] + concept_texts + miscon_texts + clar_texts + rel_texts + [ref_text]
+    to_embed = sentences + [text] + flat_concept_texts + miscon_texts + clar_texts + rel_texts + [ref_text]
     emb = embed(to_embed)
 
     n_s = len(sentences)
     sent_emb = emb[:n_s]
     full_emb = emb[n_s : n_s + 1]
     i = n_s + 1
-    concept_emb = emb[i : i + len(concepts)]; i += len(concepts)
+    concept_emb = emb[i : i + len(flat_concept_texts)]; i += len(flat_concept_texts)
     miscon_emb = emb[i : i + len(misconceptions)]; i += len(misconceptions)
     clar_emb = emb[i : i + len(misconceptions)]; i += len(misconceptions)
     rel_emb = emb[i : i + len(relationships)]; i += len(relationships)
@@ -129,10 +151,15 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     concept_results = []
     coverage_points = 0.0
     if concepts and n_s:
-        sims = cosine_matrix(concept_emb, sent_emb)  # concepts x sentences
+        sims = cosine_matrix(concept_emb, sent_emb)  # (all concept refs) x sentences
+        row = 0
         for ci, c in enumerate(concepts):
-            best_j = int(np.argmax(sims[ci]))
-            best = float(sims[ci, best_j])
+            n_refs = len(concept_refs[ci])
+            block = sims[row : row + n_refs]  # this concept's refs x sentences
+            row += n_refs
+            flat_best = int(np.argmax(block))
+            best_ref, best_j = divmod(flat_best, n_s)
+            best = float(block[best_ref, best_j])
             if best >= CONCEPT_COVERED_T:
                 status, pts = "covered", 1.0
             elif best >= CONCEPT_PARTIAL_T:
@@ -140,6 +167,19 @@ def analyze_response(text: str, topic_def: dict) -> dict:
             else:
                 status, pts = "missing", 0.0
             coverage_points += pts
+            # fact-level evidence: which reviewed lecture facts did the
+            # student actually express? (rows 1.. are the facts) — either a
+            # clear semantic match, or a loose one anchored by a shared
+            # content word (embeddings alone under-rate terse fact echoes
+            # like "the first position is zero" vs "indexes start at 0")
+            facts = (c.get("facts") or [])[:4]
+            answer_words = set(content_words(text))
+            facts_matched = []
+            for k, fact in enumerate(facts):
+                fact_sim = float(np.max(block[k + 1]))
+                shared = answer_words & set(content_words(fact))
+                if fact_sim >= FACT_MATCH_T or (fact_sim >= FACT_LEX_T and shared):
+                    facts_matched.append(fact)
             concept_results.append(
                 {
                     "id": c.get("id"),
@@ -147,26 +187,63 @@ def analyze_response(text: str, topic_def: dict) -> dict:
                     "status": status,
                     "similarity": round(best, 3),
                     "best_sentence": sentences[best_j] if status != "missing" else None,
+                    "facts_matched": facts_matched,
+                    "facts_missing": [f for f in facts if f not in facts_matched],
                 }
             )
     else:
         concept_results = [
-            {"id": c.get("id"), "name": c["name"], "status": "missing", "similarity": 0.0, "best_sentence": None}
+            {"id": c.get("id"), "name": c["name"], "status": "missing", "similarity": 0.0,
+             "best_sentence": None, "facts_matched": [],
+             "facts_missing": (c.get("facts") or [])[:4]}
             for c in concepts
         ]
     concept_coverage = coverage_points / len(concepts) if concepts else 0.0
 
     # --- misconception detection ---
+    # A sentence is only flagged when it is genuinely closer to the wrong
+    # claim than to the correct account of the material. Two paths:
+    #
+    # 1) semantic margin — closer to the wrong claim than to BOTH the
+    #    clarification and the concepts' own reference texts. The concept
+    #    comparison stops the system inventing a misconception out of a
+    #    correct answer ("slicing takes part of the string using start and end
+    #    positions" can sit near a wrong claim without being wrong).
+    # 2) cue words — embeddings are nearly blind to polarity/number flips
+    #    ("index 1" vs "index 0"), so a sentence that IS about the wrong
+    #    claim, uses a word unique to the wrong claim (e.g. "one") and none
+    #    unique to the clarification (e.g. "zero"), is flagged even when the
+    #    correct concept text is embedding-close.
+    sent_concept_best = np.zeros(n_s)
+    if concepts and n_s:
+        sent_concept_best = np.max(cosine_matrix(concept_emb, sent_emb), axis=0)
     miscon_results = []
     detected = []
     if misconceptions and n_s:
         sims_m = cosine_matrix(miscon_emb, sent_emb)
         sims_c = cosine_matrix(clar_emb, sent_emb)
+        sent_words = [content_words(s) for s in sentences]
         for mi, m in enumerate(misconceptions):
             best_j = int(np.argmax(sims_m[mi]))
             sim_wrong = float(sims_m[mi, best_j])
-            sim_right = float(sims_c[mi, best_j])
-            hit = sim_wrong >= MISCONCEPTION_T and sim_wrong > sim_right + MISCONCEPTION_MARGIN
+            sim_clar = float(sims_c[mi, best_j])
+            sim_right = max(sim_clar, float(sent_concept_best[best_j]))
+            clarification = m.get("clarification", "")
+            wrong_cues = contradiction_cues(clarification, m["description"])
+            clar_cues = contradiction_cues(m["description"], clarification)
+            words = sent_words[best_j]
+            cue_hit = bool(wrong_cues) and \
+                any(_word_match(c, w) for c in wrong_cues for w in words) and \
+                not any(_word_match(c, w) for c in clar_cues for w in words)
+            # the cue path only applies when the sentence is at least as much
+            # about the wrong claim as about any correct concept text (small
+            # tolerance for the polarity-blindness of embeddings) — otherwise
+            # ordinary topic vocabulary in the cue set would cause false
+            # accusations on perfectly correct sentences
+            near_concept = sim_wrong >= float(sent_concept_best[best_j]) - 0.05
+            hit = sim_wrong >= MISCONCEPTION_T and (
+                sim_wrong > sim_right + MISCONCEPTION_MARGIN
+                or (cue_hit and near_concept and sim_wrong > sim_clar))
             miscon_results.append(
                 {
                     "id": m.get("id"),
@@ -255,7 +332,7 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     }
 
 
-def targeted_concept_check(text: str, concept: dict) -> dict:
+def targeted_concept_check(text: str, concept: dict, topic_name: str = "") -> dict:
     """Evaluate a short answer against ONE concept, using the question context.
 
     Short conversational answers ("It uses gradients.") often rely on the
@@ -266,11 +343,20 @@ def targeted_concept_check(text: str, concept: dict) -> dict:
     word with the concept text (checked by the caller via "overlap").
     """
     name = concept["name"]
-    ref = f"{name}: {concept.get('description', '')}"
-    emb = embed([text, f"{name}: {text}", ref])
-    plain = float(cosine_matrix(emb[0:1], emb[2:3])[0, 0])
-    contextual = float(cosine_matrix(emb[1:2], emb[2:3])[0, 0])
-    overlap = len(set(content_words(text)) & set(content_words(ref)))
+    # the concept is represented by its meaning AND each important lecture
+    # fact — a short answer that expresses any one of them is on-point
+    refs = [f"{name}: {concept.get('description', '')}"]
+    refs += [f"{name}: {f}" for f in (concept.get("facts") or [])[:4]]
+    emb = embed([text, f"{name}: {text}"] + refs)
+    ref_emb = emb[2:]
+    plain = float(np.max(cosine_matrix(emb[0:1], ref_emb)))
+    contextual = float(np.max(cosine_matrix(emb[1:2], ref_emb)))
+    # topic-title words ("Python", "Strings" for a lecture called "Strings in
+    # Python") appear all over the reference texts without being evidence of
+    # anything — "It's something in Python" must not pass the overlap gate
+    ref_words = set().union(*(content_words(r) for r in refs))
+    ref_words -= set(content_words(topic_name))
+    overlap = len(set(content_words(text)) & ref_words)
     return {"plain": round(plain, 3), "contextual": round(contextual, 3), "overlap": overlap}
 
 

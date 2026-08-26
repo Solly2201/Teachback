@@ -146,19 +146,33 @@ def test_signals_never_change_the_state():
             assert rec["state_key"] == STATE_KEYS[idx]
 
 
-# 25 + template activities: a lecture-created topic (no stored activities)
+# 25 + template activities: a lecture-created topic WITHOUT stored activities
 #    still yields an actionable activity built from its own concepts
 def test_template_activity_for_lecture_topic():
-    topics = client.get("/api/topics").json()
-    py = next(t for t in topics if "Python Basics" in t["name"])
-    tdef = client.get(f"/api/topics/{py['id']}").json()
-    assert tdef["activities"] == []  # nothing stored — templates must cover it
+    tdef = {
+        "name": "Loops in Python",
+        "concepts": [
+            {"name": "For loops", "description": "A for loop repeats a block once per item."},
+            {"name": "While loops", "description": "A while loop repeats while a condition holds."},
+        ],
+        "relationships": [],
+        "activities": [],
+    }
     for state_idx in range(5):
         rec = recommend(state_idx, tdef["activities"],
-                        evidence={"demonstrated": [], "unclear": ["Variables"]}, topic_def=tdef)
+                        evidence={"demonstrated": [], "unclear": ["For loops"]}, topic_def=tdef)
         a = rec["activity"]
         assert a["content"] and a["question"], f"state {state_idx} activity not performable"
     # the review template focuses the concept that needs clarification
     rec = recommend(1, tdef["activities"],
-                    evidence={"demonstrated": [], "unclear": ["Variables"]}, topic_def=tdef)
-    assert "Variables" in rec["activity"]["title"]
+                    evidence={"demonstrated": [], "unclear": ["For loops"]}, topic_def=tdef)
+    assert "For loops" in rec["activity"]["title"]
+
+    # a lecture topic WITH reviewed activities prefers the stored ones (the
+    # seeded Strings lecture publishes its reviewed activities)
+    topics = client.get("/api/topics").json()
+    strings = next(t for t in topics if "Strings" in t["name"])
+    sdef = client.get(f"/api/topics/{strings['id']}").json()
+    assert sdef["activities"], "seeded Strings topic should carry reviewed activities"
+    rec = recommend(1, sdef["activities"], topic_def=sdef)
+    assert rec["activity"]["title"] in {a["title"] for a in sdef["activities"]}

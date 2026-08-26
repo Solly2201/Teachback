@@ -427,53 +427,222 @@ TOPIC_SUBJECT = "Neural Networks"  # subject of the three TOPICS above
 # workflow at seed time: the material is run through the NLP preparation
 # (prepare_lecture), the suggestions are stored, and the reviewed_* fields
 # below play the role of the teacher's quick review edits before publishing.
+# The notes follow the recommended structured format (headings, examples,
+# Important Connections, Common Mistakes), so the extraction is a realistic
+# demonstration of the structured parser.
 PYTHON_LECTURE = {
     "subject": "Python Programming",
-    "title": "Python Basics — Variables, Data Types, and Basic Operations",
-    "description": "First steps in Python: storing values in variables, basic data types, and combining them with operators.",
-    "material": (
-        "Python variables are used to store values so that we can use them again later. "
-        "A variable is created with an assignment statement, using the = operator. "
-        "For instance, age = 20 stores the value 20 in the variable age. "
-        "Python has several basic data types: integers for whole numbers, floats for decimal numbers, "
-        "and strings for text. The type of a value decides what operations we can do with it. "
-        "Python supports basic arithmetic operators such as +, -, * and /. "
-        "An expression combines values, variables and operators, and Python evaluates it to produce a result. "
-        "For instance, total = price * quantity multiplies two variables and stores the result in total."
-    ),
+    "title": "Strings in Python",
+    "description": "Working with text: creating strings, accessing characters with indexing and slicing, and the most useful string methods.",
+    "material": """# Strings in Python
+
+## Learning Objectives
+- Explain what a string is and how to create one.
+- Explain how indexing and slicing access parts of a string.
+- Explain what common string methods like split and join do.
+
+## 1. Strings
+
+A string is text stored between quotes.
+Python treats anything inside single or double quotes as a string.
+
+Example:
+greeting = "Hello"
+
+## 2. String assignment
+
+Assigning a string stores the text in a variable so it can be used again.
+The variable is just a name that refers to the string.
+
+Example:
+name = "Python"
+
+## 3. Characters
+
+A string is made up of individual characters in a fixed order.
+Each character has a position in the string.
+
+## 4. Indexing
+
+Indexing means using a position to access a particular character in a string.
+Indexes start at 0 in Python.
+Negative indexes count from the end of the string.
+
+Example:
+s = "Python"
+s[0]   # "P"
+s[-1]  # "n"
+
+## 5. Slicing
+
+Slicing extracts a part of the string using a start and end position.
+The end position is not included in the result.
+
+Example:
+s[0:3]  # "Pyt"
+s[2:]   # "thon"
+
+## 6. split() and join()
+
+String methods are built-in operations that work on strings.
+split() breaks a string into a list of pieces.
+join() combines a list of pieces back into one string.
+
+Example:
+"a,b,c".split(",")   # ["a", "b", "c"]
+"-".join(["a", "b"]) # "a-b"
+
+## 7. f-strings
+
+An f-string builds a string by filling in the values of variables.
+
+Example:
+f"Hello {name}"
+
+## 8. Immutability
+
+Strings cannot be changed in place.
+Any operation that seems to change a string actually creates a new string.
+
+## Important Connections
+
+- Strings → contain → Characters
+- Indexing → accesses → a single Character
+- Slicing → extracts → a Substring
+- split() → converts a String into → a List
+
+## Common Mistakes
+
+- Students may think that indexing starts at 1, but actually the first character is at index 0.
+- Students may think strings can be modified directly, but actually strings are immutable and a new string is created.
+
+## Summary
+
+Strings store text. Indexing and slicing read parts of a string,
+string methods transform strings, and strings themselves never change in place.
+""",
     "objectives": [
-        "Explain what a variable is and what assignment does.",
-        "Explain the basic data types: integers, floats and strings.",
-        "Explain how operators and expressions combine values.",
+        "Explain what a string is and how to create one.",
+        "Explain how indexing and slicing access parts of a string.",
+        "Explain what common string methods like split and join do.",
     ],
-    # the teacher's quick review of the automatic draft: noisy suggestions
-    # removed ("Python", "Values", "Data types integers"), names tidied, two
-    # concepts the teacher considers essential added back in
+    # the teacher's quick review of the automatic draft: f-strings dropped as
+    # its own concept (kept in the notes), immutability folded into a
+    # misconception, some drafted questions replaced with the teacher's own
     "reviewed_concepts": [
-        {"name": "Variables",
-         "description": "Python variables are used to store values so that we can use them again later."},
-        {"name": "Assignment",
-         "description": "A variable is created with an assignment statement, using the = operator."},
-        {"name": "Data types",
-         "description": "Python has several basic data types: integers for whole numbers, floats for decimal numbers, and strings for text."},
-        {"name": "Operators",
-         "description": "Python supports basic arithmetic operators such as +, -, * and /."},
-        {"name": "Expressions",
-         "description": "An expression combines values, variables and operators, and Python evaluates it to produce a result."},
+        {"name": "Strings",
+         "description": "A string is text stored between quotes.",
+         "facts": ["Python treats anything inside single or double quotes as a string."],
+         "examples": ['greeting = "Hello"'],
+         "source_section": "Strings",
+         "source_sentences": ["A string is text stored between quotes.",
+                              "Python treats anything inside single or double quotes as a string."],
+         "main_question": "What did you understand about strings?",
+         "easier_question": "If you wanted to keep some text in a program, how would you write it?",
+         "probe_question": "What marks something as a string in Python?"},
+        {"name": "String assignment",
+         "description": "Assigning a string stores the text in a variable so it can be used again.",
+         "facts": ["The variable is just a name that refers to the string."],
+         "examples": ['name = "Python"'],
+         "source_section": "String assignment",
+         "source_sentences": ["Assigning a string stores the text in a variable so it can be used again."],
+         "main_question": "What happens when you assign a string to a variable?",
+         "easier_question": "What does name = \"Python\" do?",
+         "probe_question": "What does the variable name actually refer to after the assignment?"},
+        {"name": "Characters",
+         "description": "A string is made up of individual characters in a fixed order.",
+         "facts": ["Each character has a position in the string."],
+         "examples": [],
+         "source_section": "Characters",
+         "source_sentences": ["A string is made up of individual characters in a fixed order.",
+                              "Each character has a position in the string."],
+         "main_question": "What is a string made of?",
+         "easier_question": "If \"Python\" is a string, what are the P, y, t... called?",
+         "probe_question": "Do the characters of a string have an order?"},
+        {"name": "Indexing",
+         "description": "Using a position to access a particular character in a string.",
+         "facts": ["Indexes start at 0 in Python.",
+                   "Negative indexes count from the end of the string."],
+         "examples": ['s = "Python"; s[0] gives "P"', 's[-1] gives "n"'],
+         "source_section": "Indexing",
+         "source_sentences": ["Indexing means using a position to access a particular character in a string.",
+                              "Indexes start at 0 in Python."],
+         "main_question": "What did you understand about indexing?",
+         "easier_question": "How do you get one character from a string?",
+         "probe_question": "What does the number inside s[...] represent?",
+         "application_question": "If s = \"Python\", what would s[0] give you?"},
+        {"name": "Slicing",
+         "description": "Slicing extracts a part of the string using a start and end position.",
+         "facts": ["The end position is not included in the result."],
+         "examples": ['s[0:3] gives "Pyt"', 's[2:] gives "thon"'],
+         "source_section": "Slicing",
+         "source_sentences": ["Slicing extracts a part of the string using a start and end position.",
+                              "The end position is not included in the result."],
+         "main_question": "What did you understand about slicing?",
+         "easier_question": "How would you take just a part of a string?",
+         "probe_question": "What do the two numbers in s[0:3] mean?",
+         "application_question": "If s = \"Python\", how would you get \"yth\" out of it?"},
+        {"name": "split() and join()",
+         "description": "split() breaks a string into a list of pieces, and join() combines pieces back into one string.",
+         "facts": ["split() breaks a string into a list of pieces.",
+                   "join() combines a list of pieces back into one string."],
+         "examples": ['"a,b,c".split(",") gives ["a", "b", "c"]'],
+         "source_section": "split() and join()",
+         "source_sentences": ["split() breaks a string into a list of pieces.",
+                              "join() combines a list of pieces back into one string."],
+         "main_question": "What do split() and join() do?",
+         "easier_question": "If you had the string \"a,b,c\", what would split(\",\") give you?",
+         "probe_question": "How are split() and join() opposites of each other?"},
     ],
     "reviewed_relationships": [
-        {"source": "Assignment", "label": "stores a value in", "target": "Variables",
-         "description": "Assignment uses the = operator to store a value in a variable."},
-        {"source": "Expressions", "label": "combine", "target": "Variables",
-         "description": "An expression combines values, variables and operators to produce a result."},
-        {"source": "Operators", "label": "act on", "target": "Data types",
-         "description": "Operators act on values, and the data type of a value decides what operations are possible."},
+        {"source": "Strings", "label": "contain", "target": "Characters",
+         "description": "A string is made up of individual characters in a fixed order."},
+        {"source": "Indexing", "label": "accesses", "target": "Characters",
+         "description": "Indexing uses a position to access a single character of the string."},
+        {"source": "Slicing", "label": "extracts", "target": "Substring",
+         "description": "Slicing extracts a part of the string as a new, smaller string."},
+        {"source": "split()", "label": "converts a string into", "target": "List",
+         "description": "split() breaks a string into a list of pieces.",
+         "contradiction": "split() joins a list of pieces back into one string."},
     ],
     "reviewed_misconceptions": [
-        {"name": "A variable permanently keeps its first value",
-         "description": "Once a variable is assigned a value, that value can never change.",
-         "clarification": "A variable can be reassigned at any time; assignment just makes the name refer to a new value.",
-         "probe_question": "You suggested a variable keeps its first value forever. What happens if we assign it again?"},
+        {"name": "Indexing starts at 1",
+         "description": "The first character of a string is at index 1.",
+         "clarification": "Indexes start at 0 in Python, so the first character is at index 0.",
+         "probe_question": "You said the first character is at index 1 — which index actually holds the first character?"},
+        {"name": "Strings can be modified directly",
+         "description": "You can change one character of a string in place.",
+         "clarification": "Strings are immutable: any operation that seems to change a string actually creates a new string.",
+         "probe_question": "You suggested a string can be changed in place. What actually happens when you 'change' a string?"},
+    ],
+    # the teacher accepts the suggested activities with small edits — every
+    # activity uses this lecture's own concepts and examples
+    "reviewed_activities": [
+        {"target_state": "not_trying", "kind": "re_engagement",
+         "title": "One-line warm-up: Strings",
+         "description": "One very short question to get moving again.",
+         "content": "No pressure — one honest sentence is enough.",
+         "question": "In one sentence: what was the lecture on strings about?"},
+        {"target_state": "unclear", "kind": "concept_review",
+         "title": "Strings in plain words",
+         "description": "Re-read the core idea and say it back simply.",
+         "content": "From the lecture: a string is text stored between quotes, made up of characters that each have a position, starting at 0.",
+         "question": "Now explain in one sentence: what is a string, and how do you get one character out of it?"},
+        {"target_state": "struggling", "kind": "guided_practice",
+         "title": "Work through a slicing example",
+         "description": "Step through one slicing example from the lecture.",
+         "content": "Example from the lecture: s = \"Python\", and s[1:4] takes the characters at positions 1, 2 and 3 (the end position is not included).",
+         "question": "Take \"Python\" and use slicing to extract \"yth\". Which start and end positions did you use, and why?"},
+        {"target_state": "understanding", "kind": "application",
+         "title": "Extract parts of a string",
+         "description": "Apply indexing and slicing to a new string of your own.",
+         "content": "Pick any word — your name works. Using indexing and slicing, extract the first character, the last character, and a middle piece.",
+         "question": "Write the expressions you used and what each one returned."},
+        {"target_state": "confident", "kind": "challenge",
+         "title": "Reverse a string with slicing",
+         "description": "Optional extension — slicing with a step.",
+         "content": "Slicing also accepts a third number, the step: s[::2] takes every second character.",
+         "question": "How could slicing reverse a string? Try it and explain why it works."},
     ],
 }
 

@@ -49,6 +49,162 @@ function ConceptTimeline({ timeline, conceptNo, totalConcepts, questionNo }) {
   )
 }
 
+/* The optional "Quick knowledge check": 10 short teacher-reviewed questions.
+   Secondary evidence — it never replaces the student's own explanation. */
+function KnowledgeCheck({ quizInfo, topicId, studentId, sessionId, onResult }) {
+  const [quiz, setQuiz] = useState(null)
+  const [current, setCurrent] = useState(0)
+  const [answers, setAnswers] = useState({}) // question_id -> selected index
+  const [result, setResult] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const start = async () => {
+    setBusy(true)
+    try {
+      const q = await api.topicQuiz(topicId)
+      if (q.available) setQuiz(q)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const submit = async (finalAnswers) => {
+    setBusy(true)
+    try {
+      const r = await api.submitQuiz(quiz.quiz_id, {
+        student_id: studentId,
+        session_id: sessionId,
+        answers: Object.entries(finalAnswers).map(([qid, idx]) => ({
+          question_id: Number(qid), selected_index: idx,
+        })),
+      })
+      setResult(r)
+      onResult?.(r)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!quizInfo) return null
+
+  if (result) {
+    return (
+      <div className="card">
+        <div className="card-header">Knowledge check complete</div>
+        <div className="p-5 space-y-4">
+          <div className="text-lg font-bold text-charcoal">{result.headline}</div>
+          <p className="text-sm text-charcoal-light">{result.message}</p>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-1.5">Looked solid</div>
+              <ul className="space-y-1">
+                {result.solid_concepts.map((n) => (
+                  <li key={n} className="text-sm text-charcoal flex gap-2"><span className="text-emerald-600">✓</span>{n}</li>
+                ))}
+                {result.solid_concepts.length === 0 && <li className="text-sm text-charcoal-light">—</li>}
+              </ul>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-1.5">Worth revisiting</div>
+              <ul className="space-y-1">
+                {result.revisit_concepts.map((n) => (
+                  <li key={n} className="text-sm text-charcoal flex gap-2"><span className="text-amber-600">⚠</span>{n}</li>
+                ))}
+                {result.revisit_concepts.length === 0 && <li className="text-sm text-emerald-700">Nothing — well done.</li>}
+              </ul>
+            </div>
+          </div>
+          {result.combined.filter((c) => c.message).length > 0 && (
+            <div className="space-y-1.5 pt-3 border-t border-zinc-100">
+              {result.combined.filter((c) => c.message).map((c) => (
+                <p key={c.name} className="text-xs text-charcoal-light">
+                  <span className="font-semibold text-charcoal">{c.name}:</span> {c.message}
+                </p>
+              ))}
+            </div>
+          )}
+          <details>
+            <summary className="text-xs font-semibold text-charcoal-light uppercase tracking-wide cursor-pointer">Review the questions</summary>
+            <div className="mt-2 space-y-3">
+              {result.per_question.map((q, i) => (
+                <div key={q.id} className={`border rounded-md p-3 text-sm ${q.correct ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                  <div className="font-medium text-charcoal">{i + 1}. {q.question}</div>
+                  <div className="text-xs mt-1 text-charcoal-light">
+                    Your answer: {q.options[q.selected_index]} {q.correct ? '✓' : `· Correct: ${q.options[q.correct_index]}`}
+                  </div>
+                  <div className="text-xs mt-1 text-charcoal">{q.explanation}</div>
+                </div>
+              ))}
+            </div>
+          </details>
+        </div>
+      </div>
+    )
+  }
+
+  if (!quiz) {
+    return (
+      <div className="card p-5">
+        <div className="text-sm font-semibold text-charcoal">Quick knowledge check <span className="font-normal text-charcoal-light">(optional)</span></div>
+        <p className="text-xs text-charcoal-light mt-1.5 max-w-xl">
+          {quizInfo.n_questions} short questions about today&apos;s lecture. Don&apos;t worry if you don&apos;t
+          remember everything — this just helps us understand what parts may need another look. It is
+          not a replacement for your explanation.
+        </p>
+        {error && <p className="text-xs text-red-700 mt-2">{error}</p>}
+        <button onClick={start} disabled={busy} className="btn-secondary mt-3">
+          {busy ? 'Loading…' : 'Start knowledge check'}
+        </button>
+      </div>
+    )
+  }
+
+  const q = quiz.questions[current]
+  const selected = answers[q.id]
+  return (
+    <div className="card">
+      <div className="card-header">
+        <span>Quick knowledge check</span>
+        <span className="normal-case font-normal text-white/80">Question {current + 1} of {quiz.questions.length}</span>
+      </div>
+      <div className="p-5 space-y-3">
+        <div className="h-1.5 bg-zinc-100 rounded overflow-hidden">
+          <div className="h-full bg-brand rounded-r transition-all" style={{ width: `${((current) / quiz.questions.length) * 100}%` }} />
+        </div>
+        <div className="text-sm font-medium text-charcoal">{q.question}</div>
+        <div className="space-y-1.5">
+          {q.options.map((opt, i) => (
+            <button
+              key={i}
+              onClick={() => setAnswers((a) => ({ ...a, [q.id]: i }))}
+              className={`w-full text-left text-sm border rounded-md px-3 py-2 transition-colors ${
+                selected === i ? 'border-brand bg-red-50 text-charcoal' : 'border-zinc-200 hover:border-brand text-charcoal'
+              }`}
+            >
+              <span className="font-semibold mr-2">{String.fromCharCode(65 + i)}.</span>{opt}
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-between items-center pt-2">
+          <button onClick={() => setCurrent((c) => Math.max(0, c - 1))} disabled={current === 0} className="btn-secondary disabled:opacity-40">← Back</button>
+          {current < quiz.questions.length - 1 ? (
+            <button onClick={() => setCurrent((c) => c + 1)} disabled={selected == null} className="btn-primary disabled:opacity-40">Next →</button>
+          ) : (
+            <button onClick={() => submit(answers)} disabled={selected == null || busy} className="btn-primary disabled:opacity-40">
+              {busy ? 'Checking…' : 'Finish check'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const PACE_OPTIONS = ['Too slow', 'A little slow', 'About right', 'A little fast', 'Too fast']
 const FEEDBACK_CHIPS = ['More examples', 'Slower explanation', 'Faster pace', 'More practice',
   'More visuals', 'More real-world examples', 'More time for questions', 'Less repetition',
@@ -69,6 +225,7 @@ export default function TeachBack({ user }) {
   const [chips, setChips] = useState([])
   const [feedbackText, setFeedbackText] = useState('')
   const [result, setResult] = useState(null)
+  const [quizOutcome, setQuizOutcome] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const bottomRef = useRef(null)
@@ -160,6 +317,7 @@ export default function TeachBack({ user }) {
         feedback_text: feedbackText.trim(),
       })
       setResult(r)
+      setQuizOutcome(null)
       setAwaitingReport(false)
     } catch (e) {
       setError(e.message)
@@ -174,6 +332,7 @@ export default function TeachBack({ user }) {
     setMessages([])
     setMisconceptions([])
     setResult(null)
+    setQuizOutcome(null)
     setAwaitingReport(false)
   }
 
@@ -222,6 +381,7 @@ export default function TeachBack({ user }) {
 
   /* ---------- session result ---------- */
   if (result) {
+    const recommendation = quizOutcome?.updated_recommendation || result.recommendation
     const demonstrated = result.concept_summary.filter((c) => c.status === 'covered')
     const needsWork = result.concept_summary.filter((c) => c.status !== 'covered')
     const relsDemonstrated = (result.relationship_summary || []).filter((r) => r.status === 'demonstrated')
@@ -245,9 +405,19 @@ export default function TeachBack({ user }) {
                 <StateBadge label={result.state.label} />
               </div>
             )}
+            {result.observation?.evidence?.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-zinc-100">
+                <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-2">Why</div>
+                <ul className="space-y-1">
+                  {result.observation.evidence.map((e, i) => (
+                    <li key={i} className="text-sm text-charcoal flex gap-2"><span className="text-brand">•</span>{e}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="mt-4 pt-4 border-t border-zinc-100">
               <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-2">
-                How sure is the model? (HMM posterior)
+                How sure is this estimate?
               </div>
               {Object.entries(result.state.posterior).map(([name, p]) => (
                 <Meter key={name} label={name} value={p} color={name === result.state.label ? '#A5231B' : '#A1A1AA'} />
@@ -343,28 +513,41 @@ export default function TeachBack({ user }) {
           </div>
         )}
 
+        <KnowledgeCheck
+          quizInfo={result.quiz}
+          topicId={session.topic.id}
+          studentId={user.id}
+          sessionId={result.session_id}
+          onResult={setQuizOutcome}
+        />
+
         <div className="card">
           <div className="card-header">Recommended next activity</div>
           <div className="p-5">
             <div className="text-xs font-bold uppercase tracking-wide text-brand mb-1">
-              {result.recommendation.activity.kind.replace('_', ' ')}
+              {recommendation.activity.kind.replace('_', ' ')}
             </div>
-            <div className="font-semibold text-charcoal">{result.recommendation.activity.title}</div>
-            <p className="text-sm text-charcoal-light mt-1.5">{result.recommendation.activity.description}</p>
-            {result.recommendation.why && (
+            <div className="font-semibold text-charcoal">{recommendation.activity.title}</div>
+            <p className="text-sm text-charcoal-light mt-1.5">{recommendation.activity.description}</p>
+            {quizOutcome?.updated_recommendation && (
+              <p className="text-xs text-charcoal-light mt-1.5 italic">
+                Updated using your explanation and the knowledge check together.
+              </p>
+            )}
+            {recommendation.why && (
               <div className="mt-3 pt-3 border-t border-zinc-100">
                 <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-1">Why this was recommended</div>
-                <p className="text-sm text-charcoal">{result.recommendation.why}</p>
+                <p className="text-sm text-charcoal">{recommendation.why}</p>
               </div>
             )}
-            {result.recommendation.notes?.map((n, i) => (
+            {recommendation.notes?.map((n, i) => (
               <div key={i} className="mt-3 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-md p-2">{n}</div>
             ))}
             <Link
               to="/activity"
               state={{
-                activity: { ...result.recommendation.activity, topic_id: session.topic.id, topic_name: session.topic.name },
-                why: result.recommendation.why,
+                activity: { ...recommendation.activity, topic_id: session.topic.id, topic_name: session.topic.name },
+                why: recommendation.why,
               }}
               className="btn-primary inline-block mt-4"
             >
@@ -589,10 +772,10 @@ export default function TeachBack({ user }) {
             </div>
           </div>
           <div className="card p-4 text-xs text-charcoal-light leading-relaxed">
-            <strong className="text-charcoal">How this works:</strong> your answers are compared with the topic&apos;s
-            concepts and known misconceptions using sentence embeddings. The next question is chosen by fixed rules
-            from that analysis — the final learning state comes from a Hidden Markov Model over all your sessions.
-            There are no wrong-answer penalties; the goal is to find out what you understand.
+            <strong className="text-charcoal">How this works:</strong> this is a short check of what you took
+            away from the lecture — not an exam. Your answers are compared with what was actually taught, and
+            once you&apos;ve shown you understood an idea, we move on. Your own words are enough; there are no
+            wrong-answer penalties.
           </div>
         </div>
       </div>
