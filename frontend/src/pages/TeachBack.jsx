@@ -119,6 +119,25 @@ function KnowledgeCheck({ quizInfo, topicId, studentId, sessionId, onResult }) {
               </ul>
             </div>
           </div>
+          {result.relationship_evidence?.filter((r) => r.message).length > 0 && (
+            <div className="pt-3 border-t border-zinc-100">
+              <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-1.5">Connections</div>
+              <ul className="space-y-1.5">
+                {result.relationship_evidence.filter((r) => r.message).map((r) => (
+                  <li key={`${r.source}-${r.target}`} className="text-xs text-charcoal-light">
+                    <span className="font-semibold text-charcoal">
+                      {r.source} <span className="text-zinc-400">→</span> {r.target}
+                    </span>{' '}
+                    <span className="text-charcoal-light">
+                      (TeachBack: {r.teachback_label}
+                      {r.mcq_total ? ` · knowledge check: ${r.mcq_correct}/${r.mcq_total}` : ''})
+                    </span>{' '}
+                    {r.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {result.combined.filter((c) => c.message).length > 0 && (
             <div className="space-y-1.5 pt-3 border-t border-zinc-100">
               {result.combined.filter((c) => c.message).map((c) => (
@@ -384,8 +403,11 @@ export default function TeachBack({ user }) {
     const recommendation = quizOutcome?.updated_recommendation || result.recommendation
     const demonstrated = result.concept_summary.filter((c) => c.status === 'covered')
     const needsWork = result.concept_summary.filter((c) => c.status !== 'covered')
+    // three distinct relationship states — "not discussed" is an absence of
+    // evidence, shown neutrally and never mixed in with what needs clarifying
     const relsDemonstrated = (result.relationship_summary || []).filter((r) => r.status === 'demonstrated')
     const relsUnclear = (result.relationship_summary || []).filter((r) => r.status === 'needs_clarification')
+    const relsNotDiscussed = (result.relationship_summary || []).filter((r) => r.status === 'not_discussed')
     return (
       <div className="space-y-5">
         <div className="banner">Session Complete — {session.topic.name}</div>
@@ -493,6 +515,26 @@ export default function TeachBack({ user }) {
             </ul>
           </div>
         </div>
+
+        {relsNotDiscussed.length > 0 && (
+          <div className="card">
+            <div className="card-header">Connections we didn&apos;t get to</div>
+            <div className="p-4">
+              <ul className="flex flex-wrap gap-x-6 gap-y-2">
+                {relsNotDiscussed.map((r) => (
+                  <li key={`${r.source}-${r.target}`} className="flex items-center gap-2 text-sm">
+                    <span className="text-zinc-400">○</span>
+                    <span className="text-charcoal">{r.source} <span className="text-zinc-400">→</span> {r.target}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-charcoal-light mt-3">
+                Not discussed — these simply didn&apos;t come up in this conversation. They are not counted
+                against you, and nothing here suggests you misunderstood them.
+              </p>
+            </div>
+          </div>
+        )}
 
         {result.misconception_details?.length > 0 && (
           <div className="card">
@@ -674,7 +716,9 @@ export default function TeachBack({ user }) {
                     <input
                       type="range" min="0" max="10" step="1" value={report[key]}
                       onChange={(e) => setReport((r) => ({ ...r, [key]: Number(e.target.value) }))}
-                      className="w-full accent-[#A5231B]"
+                      aria-label={label}
+                      className="range"
+                      style={{ '--range-frac': report[key] / 10 }}
                     />
                   </div>
                 ))}

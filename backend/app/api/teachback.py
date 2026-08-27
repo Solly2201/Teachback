@@ -21,7 +21,8 @@ from ..nlp.conversation import (MAX_QUESTIONS, _update_relationships, build_plan
                                 first_question, play_turn, timeline_out)
 from ..recommend.rules import recommend
 from ..states import FEATURE_NAMES, STATE_NAMES
-from .helpers import observation_out, topic_def
+from .helpers import (DEMONSTRATED, NEEDS_CLARIFICATION, NOT_DISCUSSED,
+                      observation_out, relationship_summary, topic_def)
 
 router = APIRouter(prefix="/api/sessions", tags=["teachback"])
 
@@ -327,16 +328,14 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
     demonstrated = [c["name"] for c in concept_summary if c["status"] == "covered"]
     needs_clarification = [c["name"] for c in concept_summary if c["status"] in ("partial", "unclear", "missing")]
 
-    # relationship evidence accumulated by the conversation plan
-    rel_status_map = {"demonstrated": "demonstrated", "contradicted": "needs_clarification",
-                      "unclear": "needs_clarification", "pending": "not_shown"}
-    relationship_summary = [
-        {"source": r["source"], "label": r.get("label", "relates to"), "target": r["target"],
-         "status": rel_status_map.get(r["status"], "not_shown")}
-        for r in plan.get("relationships", [])
-    ]
-    rels_demonstrated = [r for r in relationship_summary if r["status"] == "demonstrated"]
-    rels_unclear = [r for r in relationship_summary if r["status"] == "needs_clarification"]
+    # Relationship evidence accumulated by the conversation plan (see
+    # helpers.REL_STATUS_MAP): demonstrated / not_discussed / needs_clarification.
+    # Only needs_clarification is a learning gap — "not discussed" is an absence
+    # of evidence and is never treated, worded or counted as a mistake.
+    rel_summary = relationship_summary(plan)
+    rels_demonstrated = [r for r in rel_summary if r["status"] == DEMONSTRATED]
+    rels_unclear = [r for r in rel_summary if r["status"] == NEEDS_CLARIFICATION]
+    rels_not_discussed = [r for r in rel_summary if r["status"] == NOT_DISCUSSED]
 
     # confidence/difficulty are separate observations, never a state: they
     # only steer WHICH activity style is recommended (see recommend/rules.py)
@@ -359,9 +358,12 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
     # conceptual evidence bullets stored with the observation, shown on the
     # progress page to explain WHY the learning state is what it is
     evidence_notes = [f"{len(demonstrated)}/{len(concept_summary)} concepts demonstrated"] if concept_summary else []
-    if relationship_summary:
-        evidence_notes.append(
-            f"{len(rels_demonstrated)}/{len(relationship_summary)} key relationships demonstrated")
+    if rel_summary:
+        note = f"{len(rels_demonstrated)}/{len(rel_summary)} key relationships demonstrated"
+        if rels_not_discussed:
+            # said plainly so it never reads as a failure on the progress page
+            note += f" ({len(rels_not_discussed)} not discussed — no evidence either way)"
+        evidence_notes.append(note)
     evidence_notes += [f"Mentioned from the lecture: {f}"
                        for facts in facts_by_concept.values() for f in facts][:2]
     evidence_notes += [f"Needs clarification: {name}" for name in needs_clarification[:2]]
@@ -393,7 +395,7 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         "observation": observation_out(obs),
         "session_features": dict(zip(FEATURE_NAMES, features)),
         "concept_summary": concept_summary,
-        "relationship_summary": relationship_summary,
+        "relationship_summary": rel_summary,
         "detected_misconceptions": unresolved,
         "resolved_misconceptions": resolved,
         "misconception_details": miscon_details,

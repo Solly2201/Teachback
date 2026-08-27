@@ -226,12 +226,25 @@ def _mark_incidental(plan: dict, analysis: dict) -> list[str]:
     return newly
 
 
+def _relationship_result(analysis: dict, entry: dict) -> dict | None:
+    """The analyzer's verdict for one relationship of the conversation plan."""
+    for res in analysis.get("relationships", []):
+        if (entry.get("id") is not None and res.get("id") == entry["id"]) or (
+            res["source"] == entry["source"] and res["target"] == entry["target"]
+        ):
+            return res
+    return None
+
+
 def _update_relationships(plan: dict, analysis: dict) -> None:
     """Accumulate relationship evidence across the whole session.
 
-    Evidence only improves: a relationship once demonstrated stays
-    demonstrated; a contradiction is recorded unless the relationship was
-    already demonstrated correctly.
+    Only two verdicts move a relationship here: evidence FOR the connection and
+    evidence AGAINST it. "partial" (the answer brushed past the connection) and
+    "not_shown" leave the relationship pending, because an answer that happens
+    to be near a connection the student was never asked about is not evidence
+    that they misunderstand it. Evidence only improves: a relationship once
+    demonstrated stays demonstrated.
     """
     by_key = {(r.get("id"), r["source"], r["target"]): r for r in plan.get("relationships", [])}
     for res in analysis.get("relationships", []):
@@ -411,7 +424,17 @@ def play_turn(plan: dict, analysis: dict, topic_def: dict) -> tuple[dict, dict]:
                     rdef.get("description") or f"think again about how {entry['source']} relates to {entry['target']}."
                 )
             else:
-                entry["status"] = "unclear"
+                # Asked directly and the connection still was not established.
+                # Only an ANSWER THAT ENGAGED with the connection but stopped
+                # short of it counts as an incomplete understanding worth
+                # clarifying. A blank ("I don't know") or an answer about
+                # something else leaves the relationship simply not discussed —
+                # absence of evidence is not evidence of a misunderstanding.
+                res = _relationship_result(analysis, entry)
+                text = " ".join(analysis.get("sentences", [])).lower()
+                gave_up = any(ph in text for ph in GIVE_UP_PHRASES)
+                if res is not None and res["status"] == "partial" and not gave_up:
+                    entry["status"] = "unclear"
                 feedback = "That's okay — here's the link: " + (
                     rdef.get("description") or f"{entry['source']} is connected to {entry['target']}."
                 ) + " Let's keep going."

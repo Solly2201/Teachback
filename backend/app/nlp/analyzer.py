@@ -42,15 +42,38 @@ FACT_LEX_T = 0.30          # ...or this similarity plus a shared content word
 MISCONCEPTION_T = 0.65     # minimum similarity to the wrong claim to flag it
 MISCONCEPTION_MARGIN = 0.08  # must beat similarity to the correction by this
 
-# Concept relationships. Embeddings tolerate rephrasing but are nearly blind to
-# polarity flips ("reduces the loss" vs "increases the loss" differ by ~0.002
-# cosine), so contradictions are detected with cue words derived automatically
-# from the teacher-authored pair: content words that appear in the wrong
-# version but not in the correct one (e.g. {"increases"}). A sentence is
-# contradicted only if it is semantically ABOUT the relationship AND contains
-# such a cue — never from a cue word alone.
-RELATIONSHIP_T = 0.68      # similarity at which a relationship counts as demonstrated
-RELATIONSHIP_ABOUT_T = 0.60  # sentence is on-topic enough to check for contradiction
+# Concept relationships. A relationship has THREE meaningful outcomes, and the
+# difference between them is the difference between "no evidence" and "wrong":
+#
+#   demonstrated  - the answer contains evidence for the teacher's connection
+#   contradicted  - the answer expresses the connection incorrectly
+#   partial       - the answer is about the connection but stops short of it
+#   not_shown     - nothing either way (NOT a mistake, and never treated as one)
+#
+# Demonstration has two paths, mirroring how concepts are scored:
+#   (a) a strong direct match against the teacher's own wording, or
+#   (b) a weaker match that is corroborated by the sentence ALSO carrying
+#       evidence for BOTH endpoints of the link — semantically (each endpoint's
+#       concept texts) and lexically (a word distinctive to each endpoint).
+#       Path (b) exists because a single reference sentence under-rates ordinary
+#       phrasings: "they're individual letters or symbols inside the string"
+#       expresses "a string is made of characters" at cosine 0.674, just under
+#       the direct bar, and the endpoint evidence is what makes it safe to
+#       accept without lowering the bar for everything.
+#
+# Embeddings tolerate rephrasing but are nearly blind to polarity flips
+# ("reduces the loss" vs "increases the loss" differ by ~0.002 cosine), so
+# contradictions come from explicit cues, never from similarity alone:
+#   1. cue words derived from the teacher-authored wrong version of the pair
+#      (content words in the wrong version but not the correct one), and
+#   2. an explicit negation of one of the endpoints ("...not characters"),
+#      which only applies when the sentence is about the relationship but is
+#      not itself a strong direct match.
+RELATIONSHIP_T = 0.68        # direct match: demonstrated on its own
+RELATIONSHIP_LINK_T = 0.55   # weaker match, demonstrated only with endpoint evidence
+RELATIONSHIP_ABOUT_T = 0.60  # sentence is on-topic enough to be an attempt at the link
+RELATIONSHIP_ENDPOINT_T = 0.56  # endpoint evidence inside the same sentence
+NEGATION_WINDOW = 3          # tokens after a negation that count as negated
 
 _STOPWORDS = set(
     """a an the and or but if then else of in on at to for from by with about as is are was
@@ -102,6 +125,56 @@ def contradiction_cues(description: str, contradiction: str) -> set[str]:
             if not any(_word_match(w, d) for d in desc_words)}
 
 
+def _has_any(words, vocabulary) -> bool:
+    """True if any of `words` inflection-matches something in `vocabulary`."""
+    return any(_word_match(w, v) for w in words for v in vocabulary)
+
+
+def _distinctive(words: set[str], other: set[str]) -> set[str]:
+    """`words` minus anything that also (loosely) appears in `other`."""
+    return {w for w in words if not any(_word_match(w, o) for o in other)}
+
+
+def endpoint_refs(name: str, concepts: list[dict]) -> list[str]:
+    """Reference texts describing one end of a relationship.
+
+    An endpoint usually names a concept the teacher already defined, in which
+    case it inherits that concept's meaning and reviewed facts. Endpoints with
+    no matching concept ("Substring", "List") are represented by their name.
+    """
+    key = (name or "").strip().lower()
+    for c in concepts:
+        if (c.get("name") or "").strip().lower() == key:
+            refs = [f"{c['name']}: {c.get('description', '')}"]
+            return refs + [f"{c['name']}: {f}" for f in (c.get("facts") or [])[:4]]
+    return [name]
+
+
+_NEGATION_TOKENS = {
+    "not", "no", "never", "none", "nor", "cannot", "without", "neither",
+    "isnt", "arent", "wasnt", "werent", "doesnt", "dont", "didnt", "cant",
+    "wont", "hasnt", "havent", "aint",
+}
+
+
+def negated_terms(sentence: str) -> list[str]:
+    """Content words that fall inside the scope of an explicit negation.
+
+    Deliberately shallow: the words in the NEGATION_WINDOW tokens after a
+    negation marker. Embeddings cannot see polarity, so "a string is a
+    collection of variables, not characters" needs this to be told apart from
+    "a string is a collection of characters".
+    """
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z\-']*", sentence.lower())
+    tokens = [t.replace("'", "") for t in tokens]
+    out: list[str] = []
+    for i, tok in enumerate(tokens):
+        if tok in _NEGATION_TOKENS:
+            out += [t for t in tokens[i + 1 : i + 1 + NEGATION_WINDOW]
+                    if t not in _STOPWORDS and len(t) > 2]
+    return out
+
+
 def analyze_response(text: str, topic_def: dict) -> dict:
     """Analyze one student response against a structured topic definition.
 
@@ -132,9 +205,17 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     miscon_texts = [m["description"] for m in misconceptions]
     clar_texts = [m.get("clarification", "") or m["description"] for m in misconceptions]
     rel_texts = [r["description"] for r in relationships]
+    # each relationship also carries reference texts for its two endpoints, so
+    # a sentence can be checked for evidence of BOTH ideas it connects
+    endpoint_refs_per_rel = [
+        (endpoint_refs(r["source"], concepts), endpoint_refs(r["target"], concepts))
+        for r in relationships
+    ]
+    flat_endpoint_texts = [t for pair in endpoint_refs_per_rel for side in pair for t in side]
     ref_text = topic_def.get("reference_explanation", "") or topic_def.get("name", "")
 
-    to_embed = sentences + [text] + flat_concept_texts + miscon_texts + clar_texts + rel_texts + [ref_text]
+    to_embed = (sentences + [text] + flat_concept_texts + miscon_texts + clar_texts
+                + rel_texts + flat_endpoint_texts + [ref_text])
     emb = embed(to_embed)
 
     n_s = len(sentences)
@@ -145,6 +226,7 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     miscon_emb = emb[i : i + len(misconceptions)]; i += len(misconceptions)
     clar_emb = emb[i : i + len(misconceptions)]; i += len(misconceptions)
     rel_emb = emb[i : i + len(relationships)]; i += len(relationships)
+    endpoint_emb = emb[i : i + len(flat_endpoint_texts)]; i += len(flat_endpoint_texts)
     ref_emb = emb[i : i + 1]
 
     # --- concept coverage ---
@@ -262,27 +344,95 @@ def analyze_response(text: str, topic_def: dict) -> dict:
             # scale: one strong hit ~0.6-0.8, several hits saturate towards 1
             misconception_score = float(np.clip(max(hit_sims) * 0.6 + 0.2 * (len(hit_sims) - 1) + 0.2, 0, 1))
 
-    # --- concept relationships (demonstrated / contradicted / not shown) ---
+    # --- concept relationships ---
+    # demonstrated / contradicted / partial / not_shown. "not_shown" means the
+    # answer said nothing either way about this connection: it is an absence of
+    # evidence, never a mistake, and nothing downstream may treat it as one.
     relationship_results = []
     if relationships and n_s:
         sims_r = cosine_matrix(rel_emb, sent_emb)  # relationships x sentences
+        sims_e = cosine_matrix(endpoint_emb, sent_emb)  # endpoint refs x sentences
         sent_words = [content_words(s) for s in sentences]
+        sent_negated = [negated_terms(s) for s in sentences]
+        title_words = set(content_words(topic_def.get("name", "")))
+        row = 0
         for ri, r in enumerate(relationships):
+            src_refs, tgt_refs = endpoint_refs_per_rel[ri]
+            src_block = sims_e[row : row + len(src_refs)]; row += len(src_refs)
+            tgt_block = sims_e[row : row + len(tgt_refs)]; row += len(tgt_refs)
+            src_sim = np.max(src_block, axis=0)
+            tgt_sim = np.max(tgt_block, axis=0)
+
+            # vocabulary that is distinctive to each end of the link: words the
+            # OTHER end also uses ("string" for Strings -> Characters) prove
+            # nothing about the connection, and neither do the topic's title
+            # words, so both are removed
+            src_vocab = set(content_words(r["source"]))
+            src_vocab.update(*(set(content_words(t)) for t in src_refs))
+            tgt_vocab = set(content_words(r["target"]))
+            tgt_vocab.update(*(set(content_words(t)) for t in tgt_refs))
+            src_only = _distinctive(src_vocab - title_words, tgt_vocab)
+            tgt_only = _distinctive(tgt_vocab - title_words, src_vocab)
+
             best_j = int(np.argmax(sims_r[ri]))
             best = float(sims_r[ri, best_j])
+
+            # (1) contradiction from the teacher's own wrong version of the pair:
+            #     the sentence is about the link, uses a word unique to the wrong
+            #     version, and uses NO word unique to the correct version (the
+            #     same two-sided cue test the misconception detector applies).
+            #     Without the second guard a shared incidental word is enough to
+            #     accuse a correct answer:
+            #     "split breaks the text into pieces and join puts the pieces
+            #     back together" shares "back" with the wrong version of split()
+            #     while stating the right one with "breaks".
             cues = contradiction_cues(r["description"], r.get("contradiction", ""))
-            # a sentence contradicts only if it is about this relationship AND
-            # uses a cue word unique to the teacher-authored wrong version
+            right_cues = (contradiction_cues(r.get("contradiction", ""), r["description"])
+                          if r.get("contradiction") else set())
             contradicted_j = next(
                 (j for j in range(n_s)
                  if float(sims_r[ri, j]) >= RELATIONSHIP_ABOUT_T
-                 and any(_word_match(c, w) for c in cues for w in sent_words[j])),
+                 and _has_any(sent_words[j], cues)
+                 and not _has_any(sent_words[j], right_cues)),
                 None,
             ) if cues else None
+            # (2) contradiction from an explicit negation of one of the ends.
+            #     Only for sentences that are about the link but fall short of a
+            #     strong direct match — "a string is not a number, it is a
+            #     sequence of characters" states the link and must not be flagged.
+            if contradicted_j is None:
+                endpoint_terms = (set(content_words(r["source"]))
+                                  | set(content_words(r["target"])) | src_only | tgt_only)
+                contradicted_j = next(
+                    (j for j in range(n_s)
+                     if RELATIONSHIP_ABOUT_T <= float(sims_r[ri, j]) < RELATIONSHIP_T
+                     and _has_any(sent_negated[j], endpoint_terms)),
+                    None,
+                )
+
+            # (3) demonstration: a strong direct match, or a weaker one where the
+            #     same sentence also carries evidence for both ends of the link
+            linked_j = next(
+                (j for j in range(n_s)
+                 if float(sims_r[ri, j]) >= RELATIONSHIP_LINK_T
+                 and float(src_sim[j]) >= RELATIONSHIP_ENDPOINT_T
+                 and float(tgt_sim[j]) >= RELATIONSHIP_ENDPOINT_T
+                 and _has_any(sent_words[j], src_only)
+                 and _has_any(sent_words[j], tgt_only)),
+                None,
+            )
+
             if contradicted_j is not None:
                 status, match_j = "contradicted", contradicted_j
             elif best >= RELATIONSHIP_T:
                 status, match_j = "demonstrated", best_j
+            elif linked_j is not None:
+                status, match_j = "demonstrated", linked_j
+            elif best >= RELATIONSHIP_ABOUT_T:
+                # about this connection, but stops short of establishing it —
+                # on its own still NOT a mistake; only a direct probe of this
+                # relationship reads it as an incomplete attempt
+                status, match_j = "partial", best_j
             else:
                 status, match_j = "not_shown", None
             relationship_results.append(

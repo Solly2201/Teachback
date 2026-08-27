@@ -15,7 +15,8 @@ from ..models import (Observation, Quiz, QuizAnswer, QuizAttempt, QuizQuestion,
                       Student, TeachSession, Topic)
 from ..nlp.quiz_gen import generate_quiz_questions, validate_question
 from ..recommend.rules import recommend
-from .helpers import topic_def
+from .helpers import (DEMONSTRATED, NEEDS_CLARIFICATION, NOT_DISCUSSED,
+                      REL_STATUS_LABEL, relationship_status, topic_def)
 
 router = APIRouter(prefix="/api", tags=["quiz"])
 
@@ -150,6 +151,58 @@ def _combined_concept_view(plan: dict | None, per_concept: dict) -> list[dict]:
     return out
 
 
+# --- relationships: two independent evidence channels -----------------------
+# TeachBack asks the student to SAY the connection; the knowledge check asks
+# them to RECOGNISE it. Neither is rewritten as the other: a correct MCQ never
+# becomes "you explained this connection", and a wrong MCQ never deletes an
+# explanation the student actually gave.
+def _relationship_evidence(topic_def: dict, plan: dict | None,
+                           per_question: list[dict]) -> list[dict]:
+    """Per-relationship view combining TeachBack evidence with MCQ evidence.
+
+    A relationship MCQ is tied back to its relationship structurally: the
+    question was generated from that pair, so it carries the source as its
+    concept name and the target as its correct option.
+    """
+    plan_status = {(r["source"], r["target"]): relationship_status(r.get("status"))
+                   for r in (plan or {}).get("relationships", [])}
+    out = []
+    for r in topic_def.get("relationships", []):
+        key = (r["source"], r["target"])
+        tb = plan_status.get(key, NOT_DISCUSSED)
+        matched = [q for q in per_question
+                   if q.get("kind") == "relationship"
+                   and (q.get("concept_name") or "").strip() == r["source"].strip()
+                   and (q["options"][q["correct_index"]] or "").strip() == r["target"].strip()]
+        entry = {
+            "source": r["source"], "label": r.get("label", "relates to"), "target": r["target"],
+            "teachback_status": tb,
+            "teachback_label": REL_STATUS_LABEL[tb],
+            "mcq_total": len(matched) or None,
+            "mcq_correct": sum(1 for q in matched if q["correct"]) if matched else None,
+            "message": "",
+        }
+        if matched:
+            all_right = all(q["correct"] for q in matched)
+            if tb == DEMONSTRATED and all_right:
+                entry["message"] = ("You explained this connection and the knowledge check "
+                                    "supported it.")
+            elif tb == DEMONSTRATED:
+                entry["message"] = ("You explained this connection during TeachBack; the knowledge "
+                                    "check missed it, so it is worth one quick look — your "
+                                    "explanation still stands.")
+            elif all_right:
+                entry["message"] = ("Your knowledge check supported this connection, although you "
+                                    "didn't explicitly discuss it during TeachBack.")
+            elif tb == NEEDS_CLARIFICATION:
+                entry["message"] = "Worth revisiting: both signals point at this connection."
+            else:
+                entry["message"] = ("This connection didn't come up in your explanation, and the "
+                                    "knowledge check didn't confirm it either.")
+        out.append(entry)
+    return out
+
+
 @router.post("/quiz/{quiz_id}/submit")
 def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
     quiz = db.get(Quiz, quiz_id)
@@ -188,6 +241,10 @@ def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
     # combined evidence with the TeachBack session (both signals preserved)
     session = db.get(TeachSession, data.session_id) if data.session_id else None
     combined = _combined_concept_view(session.plan if session else None, per_concept)
+    relationship_evidence = (
+        _relationship_evidence(topic_def(session.topic), session.plan, per_question)
+        if session is not None else []
+    )
 
     # the knowledge-check result becomes an evidence NOTE on the session's
     # observation — never a feature: the 8-dim observation vector and the HMM
@@ -210,6 +267,11 @@ def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
                             if c["teachback_status"] == "covered"]
             unclear = [c["name"] for c in combined if c["verdict"] == "revisit"]
             unclear += [c["name"] for c in combined if c["verdict"] == "quick_review"]
+            # only connections the student actually got wrong or left incomplete
+            # count as gaps — a connection that simply never came up does not
+            unclear += [f"the connection {r['source']} → {r['target']}"
+                        for r in relationship_evidence
+                        if r["teachback_status"] == NEEDS_CLARIFICATION]
             feats = obs.features or []
             signals = None
             if len(feats) >= 8:
@@ -235,6 +297,7 @@ def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
         "per_question": per_question,
         "per_concept": [{"name": k, **v} for k, v in per_concept.items()],
         "combined": combined,
+        "relationship_evidence": relationship_evidence,
         "solid_concepts": solid,
         "revisit_concepts": revisit,
         "updated_recommendation": updated_recommendation,

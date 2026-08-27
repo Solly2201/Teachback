@@ -28,4 +28,72 @@ body {
   .label {
     @apply block text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-1;
   }
+
+  /* Range slider.
+     The browser's own range control draws its thumb CENTRED on the value
+     position, so at the minimum and the maximum half the thumb falls outside
+     the input's box and is clipped away — the end of the scale looks (and
+     feels) unreachable. Taking over the appearance fixes that at the source:
+     with `appearance: none` the thumb is laid out INSIDE the track, so it
+     renders whole at both endpoints while the native input keeps all of its
+     behaviour (drag, click, arrow keys, Home/End, touch).
+
+     The filled portion is a gradient over the track rather than the browser's
+     accent-colour fill, and `--range-frac` (0-1, set by the component from the
+     current value) positions it. The fill stops at the thumb's CENTRE, which
+     travels between 8px and width-8px, so the fill and the thumb stay lined up
+     across the whole scale. */
+  .range {
+    -webkit-appearance: none;
+    appearance: none;
+    @apply w-full bg-transparent cursor-pointer;
+    height: 20px;  /* comfortable hit area; the visible track is 6px */
+    --range-fill: calc(var(--range-frac, 0.5) * (100% - 16px) + 8px);
+  }
+  .range::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: linear-gradient(to right,
+      theme(colors.brand.DEFAULT) 0 var(--range-fill),
+      theme(colors.zinc.200) var(--range-fill) 100%);
+  }
+  .range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    margin-top: -5px;  /* centre the 16px thumb on the 6px track */
+    border-radius: 9999px;
+    background: theme(colors.brand.DEFAULT);
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 0 1px theme(colors.zinc.400);
+  }
+  .range:focus-visible {
+    outline: none;
+  }
+  .range:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 1px theme(colors.zinc.400), 0 0 0 4px theme(colors.brand.light);
+  }
+  .range:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+  /* Firefox draws the filled portion itself, so it only needs the colours. */
+  .range::-moz-range-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: theme(colors.zinc.200);
+  }
+  .range::-moz-range-progress {
+    height: 6px;
+    border-radius: 9999px;
+    background: theme(colors.brand.DEFAULT);
+  }
+  .range::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    background: theme(colors.brand.DEFAULT);
+    border: 2px solid #ffffff;
+    box-shadow: 0 0 0 1px theme(colors.zinc.400);
+  }
 }

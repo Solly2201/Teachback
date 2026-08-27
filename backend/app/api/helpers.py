@@ -2,6 +2,43 @@
 from ..models import Observation, Student, Topic
 from ..states import STATE_NAMES
 
+# --- how a concept relationship is reported to students and teachers -------
+# Three states, and only ONE of them is a learning gap. "Not discussed" means
+# the student neither showed the connection nor said anything against it: an
+# absence of evidence. It must never be phrased, counted or acted on as a
+# misunderstanding, so it is a distinct value everywhere it is exposed.
+DEMONSTRATED = "demonstrated"
+NOT_DISCUSSED = "not_discussed"
+NEEDS_CLARIFICATION = "needs_clarification"
+
+# conversation-plan status -> reported status
+REL_STATUS_MAP = {
+    "demonstrated": DEMONSTRATED,
+    "contradicted": NEEDS_CLARIFICATION,
+    "unclear": NEEDS_CLARIFICATION,
+    "pending": NOT_DISCUSSED,
+}
+
+REL_STATUS_LABEL = {
+    DEMONSTRATED: "Demonstrated",
+    NOT_DISCUSSED: "Not discussed",
+    NEEDS_CLARIFICATION: "Needs clarification",
+}
+
+
+def relationship_status(plan_status: str | None) -> str:
+    return REL_STATUS_MAP.get(plan_status, NOT_DISCUSSED)
+
+
+def relationship_summary(plan: dict | None) -> list[dict]:
+    """Reported relationship evidence from a TeachBack conversation plan."""
+    return [
+        {"source": r["source"], "label": r.get("label", "relates to"), "target": r["target"],
+         "status": relationship_status(r.get("status")),
+         "status_label": REL_STATUS_LABEL[relationship_status(r.get("status"))]}
+        for r in (plan or {}).get("relationships", [])
+    ]
+
 
 def topic_def(topic: Topic) -> dict:
     """Structured topic definition consumed by the NLP analyzer and dialogue engine."""

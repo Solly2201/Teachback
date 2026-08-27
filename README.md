@@ -154,14 +154,34 @@ Student responses are evaluated **against that definition**.
 - **Explanation depth / response effort** — structural richness and length measures.
 - **Concept relationships** — each topic carries a small teacher-authored list of
   relationships (e.g. *Backpropagation → computes → Gradient*), each stored as one correct
-  sentence and, where a natural error exists, one wrong version. A student sentence
-  demonstrates a relationship when similar enough to the correct sentence. Because embeddings
-  are nearly blind to polarity flips ("reduces the loss" vs "increases the loss" differ by
-  ~0.002 cosine), contradictions are detected with **cue words derived automatically from the
-  teacher-authored pair** — and only on sentences that are semantically about that
-  relationship, so a cue word alone never triggers a flag. Relationship evidence accumulates
-  across the conversation (it is *not* added to the HMM feature vector, so the trained
-  artifact stays valid).
+  sentence and, where a natural error exists, one wrong version. Every relationship ends the
+  session in exactly one of **three** states, and only the last of them is a learning gap:
+
+  | State | Meaning |
+  |---|---|
+  | ✓ **Demonstrated** | the answer contains evidence for the teacher's connection |
+  | ○ **Not discussed** | no evidence either way — never counted, worded or acted on as a mistake |
+  | ⚠ **Needs clarification** | the connection was expressed incompletely, questionably or incorrectly |
+
+  A relationship is demonstrated either by a **strong direct match** against the teacher's
+  sentence, or by a weaker match that is **corroborated at both ends of the link** — the same
+  student sentence also carries semantic and lexical evidence for the source *and* the target
+  concept. The second path exists because one reference sentence under-rates ordinary
+  phrasing ("they're individual letters or symbols inside the string" expresses *strings
+  contain characters* at cosine 0.674, just under the direct bar) and the endpoint evidence is
+  what makes accepting it safe without lowering the bar for everything.
+
+  Because embeddings are nearly blind to polarity flips ("reduces the loss" vs "increases the
+  loss" differ by ~0.002 cosine), contradictions come from explicit cues only: **cue words
+  derived automatically from the teacher-authored pair** (flagged only when the sentence uses
+  no word unique to the *correct* version, so "join puts the pieces back together" is not
+  accused of contradicting split()), or an **explicit negation of one of the endpoints**
+  ("…not characters"). A sentence that says nothing about a connection leaves it *Not
+  discussed*; even a directly probed connection stays *Not discussed* when the student gave a
+  blank or off-target answer — being asked is not the same as getting it wrong.
+
+  Relationship evidence accumulates across the conversation (it is *not* added to the HMM
+  feature vector, so the trained artifact stays valid).
 
 ### Guided conversation (`nlp/conversation.py`)
 
