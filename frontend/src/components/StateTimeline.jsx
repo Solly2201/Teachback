@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { STATE_ORDER } from '../services/api.js'
+import { STATE_ORDER, studentStateLabel } from '../services/api.js'
 
 /**
  * Learning-state trajectory: session index (x) vs ordinal state (y).
  * Single series -> one brand-red step line with markers, no legend needed.
  */
-export default function StateTimeline({ timeline, height = 220 }) {
+export default function StateTimeline({ timeline, height = 220, audience = 'student' }) {
   const [hover, setHover] = useState(null)
   const points = timeline.filter((o) => o.state_index !== null && o.state_index !== undefined)
   if (points.length === 0) {
@@ -32,7 +32,9 @@ export default function StateTimeline({ timeline, height = 220 }) {
         {STATE_ORDER.map((name, s) => (
           <g key={name}>
             <line x1={padL} x2={width - padR} y1={y(s)} y2={y(s)} stroke="#E4E4E7" strokeWidth="1" />
-            <text x={padL - 8} y={y(s) + 4} textAnchor="end" fontSize="11" fill="#666666">{name}</text>
+            <text x={padL - 8} y={y(s) + 4} textAnchor="end" fontSize="11" fill="#666666">
+              {audience === 'student' ? studentStateLabel(name) : name}
+            </text>
           </g>
         ))}
         {/* line */}
@@ -66,7 +68,7 @@ export default function StateTimeline({ timeline, height = 220 }) {
                 <g>
                   <rect x={tx - 88} y={ty - 34} width="176" height="34" rx="5" fill="#3F3F46" />
                   <text x={tx} y={ty - 20} textAnchor="middle" fontSize="11" fill="#FFFFFF" fontWeight="bold">
-                    {p.state_label}
+                    {audience === 'student' ? studentStateLabel(p.state_label) : p.state_label}
                   </text>
                   <text x={tx} y={ty - 7} textAnchor="middle" fontSize="10" fill="#D4D4D8">
                     {p.topic_name || 'Session'} · {p.created_at ? new Date(p.created_at).toLocaleDateString() : `#${hover + 1}`}

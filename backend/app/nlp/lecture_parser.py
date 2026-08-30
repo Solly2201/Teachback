@@ -8,7 +8,7 @@ This module turns raw notes (Markdown or plain text) into a document tree:
         "title": str | None,
         "objectives": [str],          # from a "Learning Objectives" section
         "sections": [                 # one per content heading
-            {"heading", "level", "sentences", "bullets", "examples"}
+            {"heading", "level", "sentences", "bullets", "examples", "page"}
         ],
         "connections": [str],         # raw lines of an "Important Connections" section
         "mistakes": [str],            # raw lines of a "Common Mistakes" section
@@ -24,6 +24,9 @@ Recognised structure:
   never treated as prose — code tokens must not become concepts)
 * special sections by heading keyword: objectives / connections / common
   mistakes / summary
+* ``<!-- page N -->`` provenance markers, written by the PDF ingestion step
+  (nlp/pdf_clean.py) and never shown as content — they let a suggestion say
+  "found on page 7" and survive the teacher editing the extracted text
 
 Everything is heuristic; the faculty review step remains the authority.
 """
@@ -41,10 +44,34 @@ _CONNECTION_HEADINGS = ("important connection", "connections", "connection",
 _MISTAKE_HEADINGS = ("common mistake", "common confusion", "misconception",
                      "common error", "common mix-up", "common mixups")
 _SUMMARY_HEADINGS = ("summary", "recap", "key takeaway", "wrap-up", "wrap up")
-# headings that are structure, not concepts
+# Headings that are DOCUMENT STRUCTURE, not teachable concepts. A slide deck
+# is full of these ("Lesson: ... Overview", "Agenda", "Thank You"): they
+# organise the material without being something a student can explain.
 _GENERIC_HEADINGS = ("introduction", "overview", "agenda", "outline", "homework",
                      "references", "reading", "exercises", "practice", "examples",
-                     "example", "notes", "today", "lecture")
+                     "example", "notes", "today", "lecture", "module", "lesson",
+                     "chapter", "slide", "contents",
+                     "table of contents", "objectives", "learning objectives",
+                     "learning outcomes", "goals", "summary", "recap", "conclusion",
+                     "conclusions", "thank you", "thanks", "questions", "any questions",
+                     "q&a", "acknowledgements", "acknowledgments", "disclaimer",
+                     "copyright", "welcome", "roadmap", "syllabus",
+                     "revision", "key takeaways", "further reading", "bibliography",
+                     "appendix", "glossary", "topics covered", "in this lesson",
+                     "in this module", "what we will cover", "next steps")
+# suffixes that turn any heading into a structural one ("Cloud Computing Overview")
+_STRUCTURAL_SUFFIXES = (" overview", " introduction", " agenda", " outline",
+                        " contents", " roadmap", " summary", " recap", " objectives",
+                        " outcomes", " takeaways")
+# "Module 3:", "Lesson -", "Chapter 4 —", "Slide 12", "Week 2:", "Unit II."
+_STRUCTURAL_PREFIX_RE = re.compile(
+    r"^\s*(module|lesson|chapter|unit|section|slide|part|topic|week|lecture|day)"
+    r"\s*(?:\d{1,3}|[ivxlc]{1,6})?\s*[:.\-–—]\s*", re.I)
+# a heading that is only numbering ("4.", "(3)") or a bare roman numeral
+_NUMBER_ONLY_RE = re.compile(r"^(?:[\s\d.,:;()\[\]/|-]+|[IVXLC]{1,6}[.)]?)$")
+_LEGAL_RE = re.compile(r"(©|\(c\)\s*(19|20)\d{2}|copyright|all rights reserved|™|®"
+                       r"|confidential|proprietary)", re.I)
+_PAGE_MARKER_RE = re.compile(r"^<!--\s*page\s+(\d+)\s*-->$", re.I)
 
 _EXAMPLE_PREFIX_RE = re.compile(r"^\s*(example|e\.g\.|eg)\s*[:\-]", re.I)
 
@@ -103,7 +130,7 @@ def _plain_heading(line: str, next_line: str | None) -> bool:
 def parse_lecture(text: str) -> dict:
     lines = (text or "").replace("\r\n", "\n").split("\n")
     doc = {"title": None, "objectives": [], "sections": [], "connections": [],
-           "mistakes": [], "summary": "", "has_structure": False}
+           "mistakes": [], "summary": "", "has_structure": False, "has_pages": False}
 
     current = None          # current content section dict
     mode = "content"        # content | objectives | connections | mistakes | summary
@@ -111,6 +138,7 @@ def parse_lecture(text: str) -> dict:
     example_run = False     # inside an "Example:" block
     summary_parts: list[str] = []
     md_heading_count = 0
+    page = None             # current page number, from <!-- page N --> markers
 
     def start_section(heading: str, level: int):
         nonlocal current, mode, example_run
@@ -119,7 +147,7 @@ def parse_lecture(text: str) -> dict:
         mode = kind
         if kind == "content":
             current = {"heading": _clean_heading(heading), "level": level,
-                       "sentences": [], "bullets": [], "examples": []}
+                       "sentences": [], "bullets": [], "examples": [], "page": page}
             doc["sections"].append(current)
 
     def add_prose(textline: str):
@@ -140,6 +168,14 @@ def parse_lecture(text: str) -> dict:
     for i, raw in enumerate(lines):
         line = raw.rstrip()
         stripped = line.strip()
+
+        marker = _PAGE_MARKER_RE.match(stripped)
+        if marker:
+            page = int(marker.group(1))
+            doc["has_pages"] = True
+            # a page break also ends the current paragraph/example run
+            example_run = False
+            continue
 
         if stripped.startswith("```"):
             in_fence = not in_fence
@@ -225,9 +261,32 @@ def parse_lecture(text: str) -> dict:
     return doc
 
 
+def strip_structural_prefix(heading: str) -> str:
+    """Remove a "Module 3:" / "Lesson —" style navigation prefix."""
+    return _STRUCTURAL_PREFIX_RE.sub("", heading or "", count=1).strip()
+
+
 def is_generic_heading(heading: str) -> bool:
-    h = heading.strip().lower().rstrip(":")
-    return any(h == g or h.startswith(g + " ") for g in _GENERIC_HEADINGS)
+    """True when a heading is document STRUCTURE rather than a teachable idea.
+
+    A heading is evidence that a concept *might* be here; it is not proof.
+    "Lesson: Cloud Computing Overview", "Agenda", "Thank You" and "Module 4"
+    organise a deck without naming anything a student could explain back.
+    """
+    raw = (heading or "").strip().rstrip(":.").strip()
+    if not raw:
+        return True
+    if _LEGAL_RE.search(raw) or _NUMBER_ONLY_RE.match(raw):
+        return True
+    inner = strip_structural_prefix(raw).rstrip(":.").strip()
+    if not inner:
+        return True  # the heading was nothing but navigation ("Module 3:")
+    for candidate in {raw.lower(), inner.lower()}:
+        if any(candidate == g or candidate.startswith(g + " ") for g in _GENERIC_HEADINGS):
+            return True
+        if any(candidate.endswith(sfx) for sfx in _STRUCTURAL_SUFFIXES):
+            return True
+    return False
 
 
 def parse_connection_line(line: str) -> dict | None:

@@ -13,7 +13,11 @@ embedded with a pretrained sentence-transformer. We then compute:
                           "important fact" from the lecture — so a student who
                           says "the first position is zero" matches the fact
                           "Indexes start at 0" even with no shared textbook
-                          wording. >= COVERED_T counts as demonstrated,
+                          wording. The lecture's own examples are reference
+                          texts too, so a student who answers with the example
+                          they were shown is matched against it rather than
+                          scored as if they had said nothing.
+                          >= COVERED_T counts as demonstrated,
                           a band below counts as partially demonstrated.
 * misconception_score   - each known misconception is stored as the wrong claim
                           plus a correct "clarification". A sentence is flagged
@@ -37,6 +41,7 @@ from .embedder import cosine_matrix, embed
 # evaluation/evaluate.py for the resulting precision/recall.
 CONCEPT_COVERED_T = 0.62   # similarity at which a concept counts as demonstrated
 CONCEPT_PARTIAL_T = 0.56   # partial credit band
+MAX_EXAMPLE_REFS = 2       # lecture examples used as concept reference texts
 FACT_MATCH_T = 0.60        # a specific lecture fact counts as mentioned
 FACT_LEX_T = 0.30          # ...or this similarity plus a shared content word
 MISCONCEPTION_T = 0.65     # minimum similarity to the wrong claim to flag it
@@ -200,6 +205,10 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     for c in concepts:
         refs = [f"{c['name']}: {c['description']}"]
         refs += [f"{c['name']}: {f}" for f in (c.get("facts") or [])[:4]]
+        # the lecture's own examples are reference texts too: students often
+        # explain by reproducing the example they were shown. Kept AFTER the
+        # facts so the fact-level indexing below is unaffected.
+        refs += [f"{c['name']}: {e}" for e in (c.get("examples") or [])[:MAX_EXAMPLE_REFS]]
         concept_refs.append(refs)
     flat_concept_texts = [t for refs in concept_refs for t in refs]
     miscon_texts = [m["description"] for m in misconceptions]
@@ -497,6 +506,7 @@ def targeted_concept_check(text: str, concept: dict, topic_name: str = "") -> di
     # fact — a short answer that expresses any one of them is on-point
     refs = [f"{name}: {concept.get('description', '')}"]
     refs += [f"{name}: {f}" for f in (concept.get("facts") or [])[:4]]
+    refs += [f"{name}: {e}" for e in (concept.get("examples") or [])[:MAX_EXAMPLE_REFS]]
     emb = embed([text, f"{name}: {text}"] + refs)
     ref_emb = emb[2:]
     plain = float(np.max(cosine_matrix(emb[0:1], ref_emb)))

@@ -84,10 +84,25 @@ def infer_sequence(features_seq: list[list[float]]) -> dict:
 
     Returns per-session canonical state indices/labels plus the posterior
     distribution over states for the most recent session.
+
+    Works for a single session (the HMM then falls back to the initial-state
+    distribution and one emission) as well as a long history, which is the
+    case that actually motivates the HMM: Viterbi re-reads the whole
+    trajectory, so new evidence can revise the reading of earlier sessions.
+    Malformed input is rejected loudly rather than being coerced into a
+    silently wrong state.
     """
     model, mapping = load_hmm()
     to_canon = {int(k): v for k, v in mapping["state_to_canonical"].items()}
+    if not features_seq:
+        raise ValueError("Cannot infer a learning state from an empty observation sequence.")
     X = np.array(features_seq, dtype=float)
+    if X.ndim != 2 or X.shape[1] != model.means_.shape[1]:
+        raise ValueError(
+            f"Observation vectors must be {model.means_.shape[1]}-dimensional; "
+            f"got array of shape {X.shape}.")
+    if not np.all(np.isfinite(X)):
+        raise ValueError("Observation vectors contain NaN or infinite values.")
     raw_states = model.predict(X)
     canon = [to_canon[int(s)] for s in raw_states]
 
@@ -102,4 +117,61 @@ def infer_sequence(features_seq: list[list[float]]) -> dict:
         "current_state": canon[-1],
         "current_label": STATE_NAMES[canon[-1]],
         "current_posterior": [round(p, 4) for p in canon_post],
+    }
+
+
+def validate_model(tolerance: float = 1e-6) -> dict:
+    """Read-only sanity report on the preserved HMM artifacts.
+
+    The model is a preserved artifact: this NEVER retrains, refits or writes
+    anything. It only checks the properties the rest of the system relies on,
+    so a corrupted or swapped artifact is caught explicitly instead of quietly
+    producing plausible-looking states:
+
+      * the transition matrix and the start distribution are proper
+        distributions (non-negative, rows summing to 1)
+      * emission means sit in the 0-1 range the features are defined on
+      * covariances are positive
+      * the learned-state -> canonical-profile mapping is a bijection, and its
+        Hungarian assignment distances are recorded
+
+    Returns a report dict; ``report["ok"]`` is True when every check passes.
+    """
+    model, mapping = load_hmm()
+    n_states, n_features = model.means_.shape
+    problems = []
+
+    row_sums = model.transmat_.sum(axis=1)
+    if not np.allclose(row_sums, 1.0, atol=1e-6):
+        problems.append(f"transition rows do not sum to 1: {row_sums.tolist()}")
+    if float(model.transmat_.min()) < -tolerance:
+        problems.append("transition matrix has negative entries")
+    if not np.isclose(float(model.startprob_.sum()), 1.0, atol=1e-6):
+        problems.append("start probabilities do not sum to 1")
+    if float(model.means_.min()) < -0.5 or float(model.means_.max()) > 1.5:
+        problems.append("emission means fall far outside the 0-1 feature range")
+    # covariance_type="diag": covars_ is returned as full diagonal matrices,
+    # so only the diagonal carries the actual per-feature variances
+    variances = np.diagonal(np.atleast_3d(model.covars_), axis1=1, axis2=2)
+    if float(np.min(variances)) <= 0:
+        problems.append("non-positive emission variance")
+
+    to_canon = {int(k): int(v) for k, v in mapping["state_to_canonical"].items()}
+    if sorted(to_canon) != list(range(n_states)):
+        problems.append("state mapping does not cover every learned state")
+    if sorted(to_canon.values()) != list(range(n_states)):
+        problems.append("state mapping is not a one-to-one assignment")
+
+    distances = {k: float(v) for k, v in mapping.get("distances", {}).items()}
+    return {
+        "ok": not problems,
+        "problems": problems,
+        "n_states": int(n_states),
+        "n_features": int(n_features),
+        "transition_row_sums": [round(float(v), 6) for v in row_sums],
+        "self_transition": [round(float(model.transmat_[i, i]), 4) for i in range(n_states)],
+        "mapping": {STATE_NAMES[v]: int(k) for k, v in to_canon.items()},
+        "min_variance": round(float(np.min(variances)), 6),
+        "mapping_distances": distances,
+        "max_mapping_distance": round(max(distances.values()), 4) if distances else None,
     }

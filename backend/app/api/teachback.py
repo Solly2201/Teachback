@@ -22,7 +22,8 @@ from ..nlp.conversation import (MAX_QUESTIONS, _update_relationships, build_plan
 from ..recommend.rules import recommend
 from ..states import FEATURE_NAMES, STATE_NAMES
 from .helpers import (DEMONSTRATED, NEEDS_CLARIFICATION, NOT_DISCUSSED,
-                      observation_out, relationship_summary, topic_def)
+                      observation_out, relationship_summary, student_state_label,
+                      topic_def)
 
 router = APIRouter(prefix="/api/sessions", tags=["teachback"])
 
@@ -68,6 +69,10 @@ def start_session(data: StartIn, db: Session = Depends(get_db)):
     topic = db.get(Topic, data.topic_id)
     if not student or not topic:
         raise HTTPException(404, "Student or topic not found")
+    if topic.archived_at is not None:
+        # the lecture behind this topic was removed; existing sessions stay
+        # readable, but no new one may start on retired material
+        raise HTTPException(400, "This lecture is no longer available for TeachBack.")
 
     tdef = topic_def(topic)
     plan = build_plan(tdef)
@@ -168,6 +173,7 @@ def _apply_summary_to_plan(plan: dict, analysis: dict) -> tuple[list[str], list[
     """
     rank = {"pending": 0, "unclear": 0, "partial": 1, "covered": 2}
     upgraded, mentioned = [], []
+    before = {id(entry): entry.get("status") for entry in plan.get("concepts", [])}
     for entry in plan.get("concepts", []):
         res = next(
             (c for c in analysis.get("concepts", [])
@@ -182,6 +188,11 @@ def _apply_summary_to_plan(plan: dict, analysis: dict) -> tuple[list[str], list[
             if res["status"] == "covered":
                 upgraded.append(entry["name"])
             entry["status"] = res["status"]
+            # provenance: this evidence came from the takeaway summary, not
+            # from the conversation. Summary evidence still counts, but the
+            # student and the teacher can see which is which.
+            entry["evidence_source"] = ("summary" if before[id(entry)] in (None, "pending")
+                                        else "teachback+summary")
     # relationship evidence accumulates the same way it does per turn
     _update_relationships(plan, analysis)
     return upgraded, mentioned
@@ -313,6 +324,9 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         status_map = {"covered": "covered", "partial": "partial", "unclear": "unclear", "pending": "missing"}
         concept_summary = [
             {"name": c["name"], "status": status_map.get(c["status"], "missing"),
+             # where the evidence came from: the conversation, the takeaway
+             # summary, or both — summary evidence counts but stays labelled
+             "evidence_source": c.get("evidence_source") or "teachback",
              "facts_matched": facts_by_concept.get(c["name"], [])}
             for c in plan_concepts
         ]
@@ -326,7 +340,14 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         concept_summary = [{"name": k, "status": v[0]} for k, v in best.items()]
 
     demonstrated = [c["name"] for c in concept_summary if c["status"] == "covered"]
-    needs_clarification = [c["name"] for c in concept_summary if c["status"] in ("partial", "unclear", "missing")]
+    needs_clarification = [c["name"] for c in concept_summary
+                           if c["status"] in ("partial", "unclear", "missing")]
+    # RECOMMENDATION SAFETY: only a concept the student actually attempted and
+    # left incomplete is evidence of a gap. A concept that simply never came
+    # up ("missing") is an absence of evidence — turning it into a specific
+    # remediation task would invent a learning problem out of silence.
+    evidenced_gaps = [c["name"] for c in concept_summary if c["status"] in ("partial", "unclear")]
+    not_discussed_concepts = [c["name"] for c in concept_summary if c["status"] == "missing"]
 
     # Relationship evidence accumulated by the conversation plan (see
     # helpers.REL_STATUS_MAP): demonstrated / not_discussed / needs_clarification.
@@ -344,8 +365,11 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         inference["current_state"], tdef["activities"], unresolved,
         evidence={
             "demonstrated": demonstrated,
-            "unclear": needs_clarification
+            # only real, evidenced gaps steer a concept-specific remediation
+            "unclear": evidenced_gaps
             + [f"the connection {r['source']} → {r['target']}" for r in rels_unclear],
+            "not_discussed": not_discussed_concepts
+            + [f"the connection {r['source']} → {r['target']}" for r in rels_not_discussed],
         },
         signals={
             "understanding": round(understanding_evidence, 3),
@@ -400,10 +424,20 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         "resolved_misconceptions": resolved,
         "misconception_details": miscon_details,
         "previous_state_label": previous_state_label,
+        "previous_student_state_label": (
+            student_state_label(prev_obs.state_index) if prev_obs else None),
         "state": {
             "index": inference["current_state"],
             "label": inference["current_label"],
+            "student_label": student_state_label(inference["current_state"]),
+            # The HMM posterior is the model's confidence in WHICH learning
+            # condition best explains the observed session sequence. It is not
+            # "the probability the student understands", and is labelled that
+            # way everywhere it is shown.
             "posterior": dict(zip(STATE_NAMES, inference["current_posterior"])),
+            "posterior_meaning": ("Model confidence in the current learning condition, "
+                                  "given this student's session history — not a probability "
+                                  "of understanding."),
         },
         "timeline": [observation_out(o) for o in history[-10:]],
         "recommendation": rec,

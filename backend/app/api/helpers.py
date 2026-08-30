@@ -1,6 +1,17 @@
 """Shared serialisation helpers for the API layer."""
 from ..models import Observation, Student, Topic
-from ..states import STATE_NAMES
+from ..states import STATE_NAMES, STATE_STUDENT_NAMES
+
+
+def student_state_label(state_index: int | None) -> str | None:
+    """Student-facing wording for a learning state.
+
+    Faculty views keep the formal state name; students see a description of
+    the EVIDENCE ("Very Little Evidence Yet") rather than an inferred
+    attitude ("Not Trying"), because the system observes answers and
+    self-reports — never intent.
+    """
+    return STATE_STUDENT_NAMES[state_index] if state_index is not None else None
 
 # --- how a concept relationship is reported to students and teachers -------
 # Three states, and only ONE of them is a learning gap. "Not discussed" means
@@ -114,6 +125,7 @@ def observation_out(o: Observation) -> dict:
         "features": o.features,
         "state_index": o.state_index,
         "state_label": o.state_label,
+        "student_state_label": student_state_label(o.state_index),
         "misconceptions": o.misconception_names or [],
         # live sessions store their own conceptual evidence bullets; seeded
         # observations fall back to feature-derived bullets
@@ -132,6 +144,7 @@ def student_out(s: Student, current_state: int | None = None) -> dict:
         "is_demo": s.is_demo,
         "current_state": current_state,
         "current_state_label": STATE_NAMES[current_state] if current_state is not None else None,
+        "current_student_state_label": student_state_label(current_state),
     }
 
 

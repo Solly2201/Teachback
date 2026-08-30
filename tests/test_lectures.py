@@ -158,3 +158,41 @@ def test_extract_text_file():
     # unsupported types are rejected with a clear message
     r = client.post("/api/lectures/extract", json={"filename": "deck.pptx", "content_base64": payload})
     assert r.status_code == 400
+
+
+# 9. The optional external-AI preparation workflow stays available and honest
+def test_ai_preparation_prompt_is_available_and_forbids_invention():
+    """Teachers may pass their rough notes through an external assistant to get
+    them into the recommended shape. TeachBack itself never calls an LLM — this
+    endpoint returns TEXT for the teacher to copy, nothing more."""
+    r = client.get("/api/lectures/prep-prompt")
+    assert r.status_code == 200
+    body = r.json()
+    template, prompt = body["template"], body["prompt"]
+
+    # the recommended format is documented and optional
+    for section in ("Learning Objectives", "Important Connections", "Common Mistakes", "Summary"):
+        assert section in template
+
+    lowered = prompt.lower()
+    for rule in ("do not invent", "terminology", "verbatim", "[unclear]",
+                 "outside knowledge", "qualifications", "slide"):
+        assert rule in lowered, f"the preparation prompt no longer says: {rule}"
+    # it must instruct the external model, never claim TeachBack evaluates with one
+    assert "teacher will review" in lowered
+
+
+def test_ordinary_notes_still_work_without_the_recommended_format():
+    """The recommended format is a convenience, never a requirement."""
+    plain = (
+        "A queue serves the element that has waited longest. Adding an element is called "
+        "enqueue and it goes at the back. Removing an element is called dequeue and it "
+        "happens at the front. This ordering is why a queue is called first in first out."
+    )
+    subjects, _ = _subjects()
+    lec = client.post("/api/lectures", json={
+        "subject_id": subjects["Python Programming"]["id"],
+        "title": "Queues in plain notes", "material_text": plain,
+    }).json()
+    assert lec["draft"]["concepts"], "plain unformatted notes produced nothing"
+    client.delete(f"/api/lectures/{lec['id']}")

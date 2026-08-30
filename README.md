@@ -94,6 +94,28 @@ contradiction examples and custom activities (the seeded Backpropagation topic i
 example). Both paths feed the exact same underlying topic structure — there is one knowledge
 system, not two.
 
+### Lecture lifecycle: publish, update, delete/archive
+
+One lecture owns one published Topic. Publishing rebuilds that Topic from the reviewed draft;
+if another lecture were ever pointing at the same Topic, publishing gives this lecture a fresh
+Topic instead of silently overwriting the other lecture's material.
+
+**Deleting a lecture must never delete what students did.** `DELETE /api/lectures/{id}` picks
+its behaviour from the data, not from a flag:
+
+| student history | behaviour | what happens |
+|---|---|---|
+| none | **deleted** | the lecture, its Topic and the Topic's owned rows (concepts, relationships, misconceptions, activities, quiz) are removed |
+| any sessions / observations / quiz attempts / activity completions | **archived** | `archived_at` is set on the lecture and its Topic |
+
+An archived lecture disappears from the active lecture list, the active topic list and every
+subject-dashboard aggregate, and no new TeachBack can be started on it — while every session,
+takeaway summary, observation, quiz attempt and completed activity stays in place with valid
+foreign keys, still readable from the student's Progress page. `GET /api/lectures/{id}/delete-preview`
+tells the UI which of the two will happen so the confirmation dialog can say it plainly, an
+**Archived** section lists archived lectures, and `POST /api/lectures/{id}/restore` brings one
+back. Tests: `tests/test_lecture_lifecycle.py`.
+
 ## 5. Student workflow
 
 1. Attend the lecture.
@@ -211,6 +233,44 @@ not a target. Depth is never confused with understanding: no advanced questions 
 unless the teacher configured them (lecture-published topics have no extension question at
 all), and lecture-mode questions are conversational (*"What did you understand about X?"*).
 
+### PDF ingestion (`nlp/pdf_extract.py` + `nlp/pdf_clean.py`)
+
+Real lecture PDFs — especially slide decks — are not linear documents. Flattening one with
+`page.extract_text()` produced a stream in which a running footer, a slide number and a slide
+title were indistinguishable, which is how `"5© Copyright 2014 EMC Corporation."` could end up
+as a concept's *meaning*. PDFs therefore go through a layout-aware pipeline before they reach
+the parser:
+
+```
+PDF -> layout-aware extraction -> deterministic cleanup -> Markdown notes -> same parser
+TXT/MD ------------------------------------------------------------------>
+```
+
+1. **Extraction** (`pdfplumber`, already installed via pdfminer.six; `pypdf` as a fallback)
+   keeps a `LectureDocument`: pages, and per page an ordered list of blocks with text,
+   bounding box, font size and weight. Letter-spaced titles (`C l o u d  C o m p u t i n g`)
+   are rejoined using the word gaps, and hyphenated line breaks are repaired.
+2. **Cleanup** decides what is page *decoration* rather than content — and never on a single
+   signal, because every single signal has a legitimate counter-example. Repetition alone is
+   wrong ("Cloud Computing" may genuinely be taught on twelve slides); position alone is wrong
+   (the first line of a slide is usually its title); shortness alone is wrong ("Immutability"
+   is a real concept). So repetition-based removal requires **repetition across pages AND a
+   consistent header/footer position AND a font size no larger than the body text AND that the
+   line never behaves like a heading** (never followed by real prose on any page). Copyright /
+   legal notices and page-number patterns are removed on their own, and only when short and
+   standalone. Every removal records its reason, and the counts are shown to the teacher.
+3. **Rebuild** emits ordinary Markdown notes — headings from relative font size/weight,
+   bullets, prose paragraphs with wrapped lines rejoined — plus `<!-- page N -->` provenance
+   markers. The parser reads and strips those markers, so a suggestion can say *"Found on page
+   7 under 'Indexing'"* even after the teacher hand-edits the extracted text.
+4. **Image-only PDFs** are detected (too little selectable text per page) and reported
+   honestly: the upload is refused with a message pointing at OCR, pasting, or the prepared-
+   note workflow. No OCR dependency was added.
+
+The review screen shows *"Extracted from 10 pages. Removed 30 repeated header/footer,
+page-number and copyright lines"* with examples, and a **View raw extraction** toggle for
+debugging. TXT/MD ingestion is unchanged — both paths feed the same downstream pipeline.
+
 ### Lecture preparation (`nlp/lecture_parser.py` + `nlp/lecture_prep.py`)
 
 Deterministic extraction, no LLM — and **structure first, semantics second**. The parser turns
@@ -218,21 +278,43 @@ raw notes into a document tree: headings (Markdown or plain-text), bullets, numb
 fenced code, `Example:` lines, and special sections (*Learning Objectives*, *Important
 Connections*, *Common Mistakes*, *Summary*). Then:
 
-- **Structured notes** (real headings): each content section becomes a candidate concept —
-  name from the heading, *meaning* from the section's explanatory prose, *important facts*
-  from the remaining short sentences, *examples* kept as examples (code tokens are never
-  mined as concepts). Every concept keeps its provenance (`source_section`,
-  `source_sentences`), so the review screen can show *why* it was suggested.
+- **Structured notes** (real headings): each content section becomes a **candidate**
+  concept, not a concept. A heading is evidence that a concept might be there; it is not
+  proof. Every candidate must earn its place:
+  - it must not be document structure — `Agenda`, `Thank You`, `Lesson: X Overview`,
+    `Module 3:`, a bare number or a copyright line are all recognised as navigation;
+  - the lecture must actually *explain* it — a definition-like sentence, or supporting facts
+    plus prose. A heading followed only by `"© 2014 EMC Corporation."` produces nothing;
+  - its **meaning is chosen, not taken from the first line**: candidate sentences are scored
+    on whether they mention the concept, carry an explanatory predicate (*is / means / refers
+    to / enables / consists of / …*), have a reasonable length, and are not metadata or code;
+  - its **facts are ranked, not the first N leftovers**: a fact must be a complete declarative
+    claim about the concept, must not restate the meaning, and must not be a fragment
+    (`"organizations"`, `"the coming decade"` never become facts).
+
+  Candidates are then scored (definition + facts + examples + objective match + semantic
+  centrality), the best are kept — **there is no fixed count of six**; a lecture may yield 3
+  or 8 — and each keeps its provenance (`source_section`, `source_page`, `source_sentences`)
+  and an honest confidence label: *Strongly supported* / *Moderately supported* /
+  *⚠ Weak evidence — review carefully*. If little was well supported, the review screen says
+  so rather than padding the draft.
 - **Plain prose** (no headings): the n-gram fallback — content-word phrases scored by
   frequency × embedding centrality, but a candidate is only kept when the lecture actually
   *explains* it (a sentence where it appears early and gets elaborated). Generic nouns
   without explanatory support are rejected, so notes about strings no longer produce
   "Letters", "Values" or "Operator" as concepts.
 - **Relationships**: explicit `A → label → B` lines from an *Important Connections* section
-  first, then sentences mentioning two concepts.
+  are authoritative. Prose-inferred relationships are deliberately conservative — two concepts
+  appearing in the same sentence is **not** a pedagogical relationship, so an explicit
+  relational cue (*uses, enables, consists of, produces, converts, requires, contrasts with…*)
+  must sit between them, within a short span. A false relationship is worse than a missing one
+  because it later shapes how a student's answer is judged.
 - **Misconception suggestions**: *Common Mistakes* lines — "Students may think X, but
   actually Y" splits into the wrong claim and its clarification — plus previously authored
   misconceptions the lecture is semantically about.
+- **Teacher objectives** stay authoritative and are used to *rank* candidates (semantic
+  similarity between each objective and each candidate). They never invent a concept: material
+  that does not support an objective still produces nothing for it.
 - **Question drafts** per concept (main / easier / probe / application), templated from the
   concept's own facts and examples — e.g. the probe quotes an actual lecture fact. The
   application question is optional extension material, never required.
@@ -248,9 +330,13 @@ The lecture-creation page shows a **recommended note template** (headings + Exam
 Important Connections + Common Mistakes) — recommended, not required; ordinary notes still
 work. It also offers a **"Copy AI preparation prompt"** button: text the teacher may paste
 into an external assistant (ChatGPT, Claude, …) to convert rough notes into the template. The
-prompt forbids inventing information, requires preserving terminology/examples/code, and marks
-uncertainty as `[UNCLEAR]`. **TeachBack itself never calls an LLM** — this is copyable text
-only (`GET /api/lectures/prep-prompt`).
+prompt forbids inventing information or adding outside knowledge, requires preserving the
+teacher's terminology, examples, code and important qualifications, forbids omitting content
+that merely looks unimportant, asks for source/page references to be kept, and marks
+uncertainty as `[UNCLEAR]`. The teacher reviews the result before TeachBack analyses it.
+**TeachBack itself never calls an LLM** — this is copyable text only
+(`GET /api/lectures/prep-prompt`), and the recommended format remains optional: ordinary
+unformatted notes are fully supported.
 
 ### Student summary (`Your takeaway`)
 
@@ -420,12 +506,15 @@ reproducible). Production frontend build: `cd teachback/frontend && npm run buil
 
 ```bash
 cd teachback
-python -m pytest tests -q      # NLP, conversation, lecture extraction, demo scenarios,
-                               # subject isolation, HMM integrity, feedback,
-                               # recommendations, activities, API end-to-end
+python -m pytest tests -q      # NLP, conversation, PDF ingestion, concept quality,
+                               # lecture lifecycle (delete/archive), evidence safety,
+                               # HMM validation + artifact integrity, subject isolation,
+                               # quiz, feedback, recommendations, activities, API end-to-end
 
 python scripts/evaluate_nlp.py         # answer-evaluator metrics on the labelled set
 python scripts/evaluate_nlp.py --tune  # threshold calibration sweep
+python scripts/simulate_user.py        # full faculty+student journey against the live API
+                                       # (resets the demo DB; --keep to run in place)
 ```
 
 ## 15. Faculty demo (~5 minutes)
@@ -578,8 +667,30 @@ happening in a student's mind.
   headings, and the faculty review step remains the authority. That review step is a design
   feature, not an afterthought.
 - Evaluator thresholds were tuned on the calibration portion of the labelled set and checked
-  on a small held-out portion (~66 items); with a dataset this size the held-out numbers are
-  coarse, and none of it represents real students.
+  on a small held-out portion (~87 of 261 items); with a dataset this size the held-out
+  numbers are coarse, and none of it represents real students.
+- **PDF ingestion depends on the deck having real text and a real visual hierarchy.** A deck
+  whose titles are the same size and weight as its body text loses heading detection and falls
+  back to prose mining; a deck with no selectable text is refused rather than guessed at (no
+  OCR). Multi-column layouts, tables and text inside images are not reconstructed — a
+  two-column page is read in line order across both columns.
+- The boilerplate cleanup is multi-signal and conservative, which means it errs towards
+  *keeping* text: a footer that appears on fewer than half the pages, or one typeset as large
+  as the body text, will survive into the notes for the teacher to delete. Conversely a
+  genuine one-line concept that only ever appears in the footer band would be removed.
+- Concept extraction from slide decks inherits the deck's own quality. Slides that are pure
+  bullet fragments with no explanatory sentence produce few or no concepts — by design, since
+  a heading with no explanation is not something a student can be asked to explain back — so
+  such a deck needs the teacher to add a sentence per idea, or the prepared-note workflow.
+- Prose-inferred relationships now require an explicit relational cue between the two
+  concepts. This trades recall for precision: genuine connections stated without such a cue
+  ("Indexing. Characters. Both matter here.") are simply not suggested, and the teacher adds
+  them in the review step or in an *Important Connections* section.
+- The **real** problematic Cloud Computing PDF was not present in this environment, so the
+  regression suite reproduces its structure (running header/footer, slide numbers, per-slide
+  copyright, a divider slide, a boilerplate-only slide, a legitimately repeated title) as a
+  generated fixture rather than testing that exact file. A different deck may still contain
+  decoration patterns these fixtures do not cover.
 - MCQ distractors come from the same lecture's material; a student who eliminates options by
   recognising which concept a sentence belongs to can sometimes answer without deep
   understanding — which is precisely why the knowledge check stays secondary to TeachBack.

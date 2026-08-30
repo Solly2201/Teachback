@@ -12,6 +12,17 @@ perceived difficulty, all 0-1) adjust WHICH activity style is recommended —
 an under-challenged student gets an optional extension, a strong-but-unsure
 student gets a confidence-building application — but they never change the
 HMM-estimated state itself. Confidence is an observation, not ground truth.
+
+`evidence` separates three things on purpose:
+
+    demonstrated   - the student showed it
+    unclear        - the student engaged with it and it did not come together:
+                     this is real evidence of a gap and MAY drive a specific
+                     remediation activity
+    not_discussed  - it never came up. Absence of evidence. It never produces
+                     a concept-specific "you are struggling with X" activity
+                     and is never worded as a mistake; at most it is offered
+                     neutrally as something still to talk about.
 """
 from ..states import STATE_KEYS
 
@@ -82,6 +93,8 @@ def _template_activity(state_key: str, topic_def: dict | None, evidence: dict | 
         return None
     topic_name = topic_def.get("name", "this topic")
     by_name = {c["name"]: c for c in concepts}
+    # focus on a concept there is actual evidence of a gap in; never on one
+    # that merely never came up (that would invent a learning problem)
     unclear = (evidence or {}).get("unclear") or []
     focus = next((by_name[n] for n in unclear if n in by_name), concepts[0])
 
@@ -176,6 +189,7 @@ def recommend(state_index: int, topic_activities: list[dict] | None = None,
     why_parts = []
     demonstrated = (evidence or {}).get("demonstrated") or []
     unclear = (evidence or {}).get("unclear") or []
+    not_discussed = (evidence or {}).get("not_discussed") or []
     if demonstrated and unclear:
         why_parts.append(
             f"You showed understanding of {', '.join(demonstrated[:3])}, "
@@ -186,6 +200,11 @@ def recommend(state_index: int, topic_activities: list[dict] | None = None,
     elif demonstrated:
         why_parts.append(f"You showed understanding of {', '.join(demonstrated[:3])}.")
     why_parts.append(signal_why or STATE_WHY[state_key])
+    if not_discussed and not unclear:
+        # stated as an absence of evidence, never as a gap in understanding
+        notes.append(
+            f"We didn't get to {', '.join(not_discussed[:3])} this time — that isn't a mistake, "
+            "just something still to talk about.")
 
     result = {"state_key": state_key, "activity_state_key": target_key,
               "activity": activity, "notes": notes, "why": " ".join(why_parts)}

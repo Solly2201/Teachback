@@ -129,8 +129,17 @@ def _combined_concept_view(plan: dict | None, per_concept: dict) -> list[dict]:
         mcq_perfect = mcq is not None and mcq["correct"] == mcq["total"]
         mcq_good = mcq is not None and mcq["correct"] * 2 >= mcq["total"]
         if mcq is None:
-            entry["verdict"] = "revisit" if tb in ("unclear", "pending") else "solid"
-            entry["message"] = ""
+            if tb == "unclear":
+                entry["verdict"] = "revisit"
+                entry["message"] = "Worth revisiting with the material."
+            elif tb in ("pending", None):
+                # never came up in the conversation and no MCQ touched it:
+                # absence of evidence, not a gap in understanding
+                entry["verdict"] = "not_discussed"
+                entry["message"] = "This one didn't come up — no evidence either way."
+            else:
+                entry["verdict"] = "solid"
+                entry["message"] = ""
         elif tb_good and mcq_perfect:
             entry["verdict"] = "solid"
             entry["message"] = "Your explanation and the knowledge check both support this — strong evidence."
@@ -211,6 +220,21 @@ def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
     student = db.get(Student, data.student_id)
     if not student:
         raise HTTPException(404, "Student not found")
+    if not data.answers:
+        raise HTTPException(400, "No answers submitted.")
+    # basic referential consistency: the knowledge check must belong to the
+    # session it claims to follow, and that session must be this student's
+    session = db.get(TeachSession, data.session_id) if data.session_id else None
+    if data.session_id is not None:
+        if session is None:
+            raise HTTPException(404, "Session not found")
+        if session.student_id != student.id:
+            raise HTTPException(400, "That TeachBack session belongs to a different student.")
+        if session.topic_id != quiz.topic_id:
+            raise HTTPException(400, "That knowledge check is not for this session's lecture.")
+        if db.query(QuizAttempt).filter(QuizAttempt.session_id == session.id,
+                                        QuizAttempt.quiz_id == quiz.id).first() is not None:
+            raise HTTPException(400, "The knowledge check for this session was already submitted.")
     questions = {q.id: q for q in quiz.questions}
 
     attempt = QuizAttempt(quiz_id=quiz.id, student_id=student.id,
@@ -239,7 +263,6 @@ def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
     db.refresh(attempt)
 
     # combined evidence with the TeachBack session (both signals preserved)
-    session = db.get(TeachSession, data.session_id) if data.session_id else None
     combined = _combined_concept_view(session.plan if session else None, per_concept)
     relationship_evidence = (
         _relationship_evidence(topic_def(session.topic), session.plan, per_question)
@@ -265,8 +288,11 @@ def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
             tdef = topic_def(session.topic)
             demonstrated = [c["name"] for c in combined
                             if c["teachback_status"] == "covered"]
+            # "revisit"/"quick_review" rest on real evidence (an attempted
+            # explanation or an answered MCQ); "not_discussed" never does
             unclear = [c["name"] for c in combined if c["verdict"] == "revisit"]
             unclear += [c["name"] for c in combined if c["verdict"] == "quick_review"]
+            not_discussed = [c["name"] for c in combined if c["verdict"] == "not_discussed"]
             # only connections the student actually got wrong or left incomplete
             # count as gaps — a connection that simply never came up does not
             unclear += [f"the connection {r['source']} → {r['target']}"
@@ -278,7 +304,8 @@ def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
                 signals = {"understanding": feats[0], "confidence": feats[6], "difficulty": feats[7]}
             updated_recommendation = recommend(
                 obs.state_index, tdef["activities"], obs.misconception_names or [],
-                evidence={"demonstrated": demonstrated, "unclear": unclear},
+                evidence={"demonstrated": demonstrated, "unclear": unclear,
+                          "not_discussed": not_discussed},
                 signals=signals, topic_def=tdef)
             if any(c["verdict"] == "practice_explaining" for c in combined):
                 updated_recommendation["notes"].append(

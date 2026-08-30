@@ -16,7 +16,8 @@ from ..config import EVAL_RESULTS_PATH, HMM_MAPPING_PATH
 from ..database import get_db
 from ..models import (Observation, Quiz, QuizAnswer, QuizAttempt, Student,
                       TeachSession, Topic)
-from ..states import FEATURE_NAMES, STATE_KEYS, STATE_NAMES, STATE_PROFILES
+from ..states import (FEATURE_NAMES, STATE_KEYS, STATE_NAMES, STATE_PROFILES,
+                      STATE_STUDENT_DESCRIPTIONS, STATE_STUDENT_NAMES)
 from .helpers import observation_out
 
 router = APIRouter(prefix="/api", tags=["teacher", "meta"])
@@ -26,15 +27,22 @@ router = APIRouter(prefix="/api", tags=["teacher", "meta"])
 def teacher_overview(subject_id: int | None = None, db: Session = Depends(get_db)):
     """Class overview. With subject_id, every aggregate is scoped to that
     subject's topics — the cross-subject isolation the switcher promises."""
-    topic_q = db.query(Topic).order_by(Topic.id)
+    # archived topics (their lecture was deleted) are excluded from every
+    # aggregate, so a removed lecture cannot reappear in the dashboard — the
+    # underlying student records are untouched and still visible per student
+    topic_q = db.query(Topic).filter(Topic.archived_at.is_(None)).order_by(Topic.id)
     if subject_id is not None:
         topic_q = topic_q.filter(Topic.subject_id == subject_id)
     topics = topic_q.all()
     topic_ids = {t.id for t in topics}
 
+    archived_ids = {t.id for t in db.query(Topic).filter(Topic.archived_at.isnot(None)).all()}
+
     obs_q = db.query(Observation).order_by(Observation.created_at, Observation.id)
     if subject_id is not None:
         obs_q = obs_q.filter(Observation.topic_id.in_(topic_ids))
+    elif archived_ids:
+        obs_q = obs_q.filter(Observation.topic_id.notin_(archived_ids))
     observations = obs_q.all()
 
     by_student: dict[int, list[Observation]] = defaultdict(list)
@@ -108,6 +116,8 @@ def teacher_overview(subject_id: int | None = None, db: Session = Depends(get_db
     session_q = db.query(TeachSession).filter(TeachSession.completed)
     if subject_id is not None:
         session_q = session_q.filter(TeachSession.topic_id.in_(topic_ids))
+    elif archived_ids:
+        session_q = session_q.filter(TeachSession.topic_id.notin_(archived_ids))
     completed_sessions = session_q.all()
     sessions_by_topic = defaultdict(list)
     for ts in completed_sessions:
@@ -199,12 +209,20 @@ def meta_states():
     if HMM_MAPPING_PATH.exists():
         with open(HMM_MAPPING_PATH, encoding="utf-8") as f:
             mapping = json.load(f)
+    from ..hmm.model import hmm_available, validate_model
+
     return {
         "state_names": STATE_NAMES,
         "state_keys": STATE_KEYS,
+        # student-facing wording: the same five states described by the
+        # evidence observed, not by an inferred attitude
+        "state_student_names": STATE_STUDENT_NAMES,
+        "state_student_descriptions": STATE_STUDENT_DESCRIPTIONS,
         "feature_names": FEATURE_NAMES,
         "state_profiles": {STATE_NAMES[k]: v for k, v in STATE_PROFILES.items()},
         "hmm_state_mapping": mapping,
+        "hmm_validation": validate_model() if hmm_available() else {"ok": False,
+                                                                    "problems": ["model not trained"]},
     }
 
 

@@ -10,4 +10,9 @@ pandas>=2.1
 joblib>=1.3
 pytest>=8.0
 httpx>=0.26
-pypdf>=4.0  # lecture PDF text extraction
+# Lecture PDF ingestion. pdfplumber is the primary extractor because it
+# reports per-word bounding boxes and font size, which is what tells a running
+# footer apart from a slide title; pypdf stays as a text-only fallback when a
+# file cannot be opened with pdfplumber.
+pdfplumber>=0.11
+pypdf>=4.0

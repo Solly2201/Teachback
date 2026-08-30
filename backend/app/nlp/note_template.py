@@ -76,12 +76,22 @@ Example:
 <2-3 sentences>
 
 STRICT RULES:
-- Do NOT invent information. Use only what is in the notes.
-- Do NOT add concepts that are not present in the source notes.
-- Preserve the teacher's own terminology and all examples and code exactly.
+- Do NOT invent concepts, facts, examples or relationships. Use ONLY what is in \
+the notes.
+- Do NOT add outside knowledge and do NOT "improve" the material.
+- Preserve the teacher's own terminology exactly — do not swap in synonyms.
+- Preserve all examples and code verbatim, including formatting.
+- Preserve important qualifications ("only when...", "except for...", "usually").
+- Do NOT omit content merely because it seems unimportant to you.
 - Only list a connection or a common mistake if the notes support it.
 - Keep every explanation simple enough to be said back in one or two sentences.
-- If something in the notes is ambiguous, mark it with [UNCLEAR] instead of guessing.
+- If something in the notes is ambiguous or unreadable, mark it [UNCLEAR] \
+instead of guessing.
+- Keep any source, page or slide references that appear in the notes, e.g. \
+write "(slide 7)" after the heading it came from.
+
+The teacher will review your output before TeachBack analyses it, so it is far \
+better to mark something [UNCLEAR] than to fill the gap yourself.
 
 TEACHER'S NOTES:
 <paste your notes here>

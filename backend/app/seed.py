@@ -46,6 +46,10 @@ def _migrate():
         ("concepts", "facts", "JSON"),
         ("concepts", "examples", "JSON"),
         ("concepts", "source", "JSON"),
+        # lecture archive/soft-delete + the PDF ingestion report
+        ("lectures", "archived_at", "DATETIME"),
+        ("lectures", "ingestion", "JSON"),
+        ("topics", "archived_at", "DATETIME"),
     ]
     with engine.connect() as conn:
         for table, col, ddl in additions:

@@ -28,8 +28,19 @@ QUIZ_SIZE = 10
 KIND_QUOTA = [("basic", 4), ("application", 3), ("misconception", 2), ("relationship", 1)]
 
 
+def _normalise_option(text: str) -> str:
+    """Comparison form of an option: case, punctuation and ellipsis removed."""
+    return re.sub(r"[^a-z0-9 ]+", " ", str(text).lower().rstrip("…")).strip()
+
+
 def validate_question(q: dict) -> bool:
-    """Structural validation every generated (or teacher-edited) MCQ must pass."""
+    """Structural validation every generated (or teacher-edited) MCQ must pass.
+
+    The checks exist to stop the two ways a deterministic generator produces
+    an unfair question: an ambiguous option set (duplicates, near-duplicates)
+    and an answerable-without-knowing question (the answer is echoed in the
+    stem, or is the only long/plausible option).
+    """
     options = q.get("options") or []
     if len(options) != 4:
         return False
@@ -38,16 +49,27 @@ def validate_question(q: dict) -> bool:
         return False
     if len({o.lower() for o in cleaned}) != 4:  # duplicate options are ambiguous
         return False
+    normalised = [_normalise_option(o) for o in cleaned]
+    if len(set(normalised)) != 4:  # near-duplicates differing only in punctuation
+        return False
     ci = q.get("correct_index")
     if not isinstance(ci, int) or not 0 <= ci < 4:
         return False
-    if not str(q.get("question", "")).strip() or not str(q.get("explanation", "")).strip():
+    question = str(q.get("question", "")).strip()
+    if len(question.split()) < 4 or not str(q.get("explanation", "")).strip():
         return False
     if not str(q.get("concept_name", "")).strip():
         return False
     # the correct option must not literally appear inside the question text
     # (an accidental answer clue)
-    if cleaned[ci].lower() in str(q["question"]).lower():
+    if cleaned[ci].lower() in question.lower():
+        return False
+    if _normalise_option(cleaned[ci]) and _normalise_option(cleaned[ci]) in _normalise_option(question):
+        return False
+    # length as an elimination cue: if the correct option is far longer than
+    # every distractor, the question can be answered by shape alone
+    distractor_lengths = [len(o) for i, o in enumerate(cleaned) if i != ci]
+    if len(cleaned[ci]) > 2.5 * max(distractor_lengths):
         return False
     return True
 

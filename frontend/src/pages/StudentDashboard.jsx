@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import StateBadge from '../components/StateBadge.jsx'
 import StateTimeline from '../components/StateTimeline.jsx'
-import { api, STATE_DESCRIPTIONS } from '../services/api.js'
+import { api, studentStateDescription } from '../services/api.js'
 
 export default function StudentDashboard({ user }) {
   const [data, setData] = useState(null)
@@ -26,9 +26,9 @@ export default function StudentDashboard({ user }) {
         <div className="card lg:col-span-2">
           <div className="card-header">Current learning condition</div>
           <div className="p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-            <StateBadge label={data.current_state_label} size="lg" />
+            <StateBadge label={data.current_state_label} size="lg" audience="student" />
             <p className="text-sm text-charcoal-light flex-1">
-              {STATE_DESCRIPTIONS[data.current_state_label] ||
+              {studentStateDescription(data.current_state_label) ||
                 'Complete your first TeachBack session so the system can estimate your learning state.'}
             </p>
             <Link to="/teachback" className="btn-primary whitespace-nowrap text-center">
@@ -109,7 +109,7 @@ export default function StudentDashboard({ user }) {
                     {o.created_at ? new Date(o.created_at).toLocaleString() : ''} · {o.source === 'live' ? 'TeachBack session' : 'past session'}
                   </div>
                 </div>
-                <StateBadge label={o.state_label} />
+                <StateBadge label={o.state_label} audience="student" />
               </div>
             ))}
           </div>

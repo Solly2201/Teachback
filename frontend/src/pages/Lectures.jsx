@@ -8,6 +8,94 @@ import { api } from '../services/api.js'
 
 const emptyForm = { title: '', description: '', objectives: '', material_text: '' }
 
+/* Confidence badge for one extracted concept. Uncertainty is shown, never
+   hidden: a weak suggestion says so, in words, before it can be published. */
+const CONFIDENCE_STYLE = {
+  strong: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  moderate: 'bg-sky-50 text-sky-700 border-sky-200',
+  weak: 'bg-amber-50 text-amber-800 border-amber-300',
+}
+
+function ConfidenceBadge({ level, label }) {
+  if (!level) return null
+  return (
+    <span className={`text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${CONFIDENCE_STYLE[level] || CONFIDENCE_STYLE.moderate}`}>
+      {level === 'weak' ? '⚠ ' : ''}{label || level}
+    </span>
+  )
+}
+
+/* What the PDF ingestion did, in one honest line the teacher can expand. */
+function IngestionReport({ report, rawText }) {
+  const [showRaw, setShowRaw] = useState(false)
+  if (!report || !report.page_count) return null
+  const removed = report.removed_total || 0
+  return (
+    <div className="text-xs text-charcoal-light bg-zinc-50 border border-zinc-200 rounded-md p-3 space-y-1.5">
+      <div>
+        <span className="font-semibold text-charcoal">Extracted from {report.page_count} page{report.page_count === 1 ? '' : 's'}.</span>{' '}
+        {removed > 0
+          ? `Removed ${removed} repeated header/footer, page-number and copyright line${removed === 1 ? '' : 's'}.`
+          : 'No repeated page decoration was found.'}
+        {report.empty_pages?.length > 0 && ` ${report.empty_pages.length} page(s) contained only boilerplate and were skipped.`}
+      </div>
+      {removed > 0 && (
+        <ul className="space-y-0.5">
+          {(report.removed_by_reason || []).map((r) => (
+            <li key={r.reason}>
+              <span className="text-charcoal">{r.count}× {r.label}</span>
+              {r.examples?.[0] && <> — e.g. &ldquo;{r.examples[0].slice(0, 70)}&rdquo;</>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {rawText && (
+        <button type="button" onClick={() => setShowRaw((v) => !v)} className="underline hover:text-brand">
+          {showRaw ? 'Hide raw extraction' : 'View raw extraction'}
+        </button>
+      )}
+      {showRaw && rawText && (
+        <pre className="max-h-60 overflow-auto bg-white border border-zinc-200 rounded p-2 whitespace-pre-wrap">{rawText}</pre>
+      )}
+    </div>
+  )
+}
+
+/* Delete confirmation. The backend decides delete vs archive from the data,
+   and this dialog shows the teacher exactly which one will happen and why. */
+function DeleteDialog({ preview, busy, onCancel, onConfirm }) {
+  if (!preview) return null
+  const archiving = preview.mode === 'archive'
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 p-4" role="dialog" aria-modal="true">
+      <div className="card max-w-lg w-full p-6 space-y-4">
+        <div className="text-lg font-bold text-charcoal">
+          {archiving ? 'Archive this lecture?' : 'Delete this lecture?'}
+        </div>
+        <p className="text-sm text-charcoal-light">{preview.message}</p>
+        {archiving && (
+          <ul className="text-xs text-charcoal-light bg-zinc-50 border border-zinc-200 rounded p-3 space-y-1">
+            <li>{preview.history.sessions} TeachBack session(s) — kept</li>
+            <li>{preview.history.quiz_attempts} knowledge-check attempt(s) — kept</li>
+            <li>{preview.history.observations} learning-state record(s) — kept</li>
+            <li>{preview.history.activity_completions} completed activity/activities — kept</li>
+          </ul>
+        )}
+        <div className="flex justify-end gap-3">
+          <button onClick={onCancel} className="btn-secondary" disabled={busy}>Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="px-4 py-2 rounded-md font-semibold text-white bg-brand hover:bg-brand-dark disabled:opacity-50"
+          >
+            {busy ? 'Working…' : archiving ? 'Archive lecture' : 'Delete lecture'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* The faculty workflow in three steps, shown on the lecture pages. */
 function WorkflowSteps({ active }) {
   const steps = ['1. Add material', '2. Review TeachBack understanding', '3. Publish']
@@ -80,10 +168,18 @@ export default function Lectures() {
   const [published, setPublished] = useState(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
+  const [ingestion, setIngestion] = useState(null)   // report from the last upload
+  const [rawText, setRawText] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
+  const [archived, setArchived] = useState([])
+  const [deleting, setDeleting] = useState(null)     // delete-preview being confirmed
 
   const load = () => {
     if (!subject) return
     api.lectures(subject.id).then(setLectures).catch((e) => setMessage({ kind: 'error', text: e.message }))
+    api.lectures(subject.id, true)
+      .then((all) => setArchived(all.filter((l) => l.archived)))
+      .catch(() => setArchived([]))
   }
   useEffect(() => { load() }, [subject?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -91,6 +187,8 @@ export default function Lectures() {
     if (!file) return
     setBusy(true)
     setMessage(null)
+    setIngestion(null)
+    setRawText('')
     try {
       if (file.name.toLowerCase().endsWith('.txt') || file.name.toLowerCase().endsWith('.md')) {
         const text = await file.text()
@@ -100,13 +198,51 @@ export default function Lectures() {
         let binary = ''
         new Uint8Array(buf).forEach((b) => { binary += String.fromCharCode(b) })
         const r = await api.extractMaterial(file.name, btoa(binary))
+        // what is shown (and analysed) is the CLEANED extraction; the raw one
+        // stays one click away for transparency
         setForm((f) => ({ ...f, material_text: r.text }))
+        setIngestion(r.report || null)
+        setRawText(r.raw_text || '')
       }
       setMessage({ kind: 'ok', text: `Loaded material from ${file.name}.` })
     } catch (e) {
       setMessage({ kind: 'error', text: e.message })
     } finally {
       setBusy(false)
+    }
+  }
+
+  const askDelete = async (id) => {
+    setMessage(null)
+    try {
+      setDeleting(await api.deletePreview(id))
+    } catch (e) {
+      setMessage({ kind: 'error', text: e.message })
+    }
+  }
+
+  const confirmDelete = async () => {
+    setBusy(true)
+    try {
+      const r = await api.deleteLecture(deleting.lecture_id)
+      setDeleting(null)
+      setMessage({ kind: 'ok', text: r.message })
+      if (lecture?.id === r.lecture_id) { setLecture(null); setView('list') }
+      load()
+    } catch (e) {
+      setMessage({ kind: 'error', text: e.message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const restore = async (id) => {
+    try {
+      await api.restoreLecture(id)
+      setMessage({ kind: 'ok', text: 'Lecture restored to your active list.' })
+      load()
+    } catch (e) {
+      setMessage({ kind: 'error', text: e.message })
     }
   }
 
@@ -120,6 +256,7 @@ export default function Lectures() {
         description: form.description,
         material_text: form.material_text,
         objectives: form.objectives.split('\n').map((o) => o.trim()).filter(Boolean),
+        ingestion: ingestion || {},
       })
       setLecture(lec)
       setPublished(null)
@@ -204,22 +341,70 @@ export default function Lectures() {
             <div className="card p-5 text-sm text-charcoal-light">No lectures yet for {subject?.name}. Create the first one.</div>
           )}
           {lectures?.map((l) => (
-            <button key={l.id} onClick={() => openLecture(l.id)} className="card p-5 text-left hover:border-brand hover:shadow-md transition-all group">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-bold text-charcoal group-hover:text-brand">{l.title}</div>
-                <span className={`text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${
-                  l.status === 'published' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
-                }`}>
-                  {l.status === 'published' ? 'live' : 'draft'}
-                </span>
-              </div>
-              <p className="text-sm text-charcoal-light mt-1 line-clamp-2">{l.description}</p>
-              <div className="text-xs text-charcoal-light mt-3">
-                {(l.draft?.concepts || []).length} concepts · {(l.objectives || []).length} objectives
-              </div>
-            </button>
+            <div key={l.id} className="card p-5 hover:border-brand hover:shadow-md transition-all group relative">
+              <button onClick={() => openLecture(l.id)} className="text-left w-full">
+                <div className="flex items-center justify-between gap-3 pr-16">
+                  <div className="font-bold text-charcoal group-hover:text-brand">{l.title}</div>
+                  <span className={`text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${
+                    l.status === 'published' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}>
+                    {l.status === 'published' ? 'live' : 'draft'}
+                  </span>
+                </div>
+                <p className="text-sm text-charcoal-light mt-1 line-clamp-2">{l.description}</p>
+                <div className="text-xs text-charcoal-light mt-3">
+                  {(l.draft?.concepts || []).length} concepts · {(l.objectives || []).length} objectives
+                </div>
+              </button>
+              <button
+                onClick={() => askDelete(l.id)}
+                title={`Delete ${l.title}`}
+                className="absolute top-4 right-4 text-xs font-semibold text-charcoal-light hover:text-brand border border-zinc-200 hover:border-brand rounded px-2 py-1 bg-white"
+              >
+                Delete
+              </button>
+            </div>
           ))}
         </div>
+
+        {archived.length > 0 && (
+          <div className="card">
+            <button
+              onClick={() => setShowArchived((v) => !v)}
+              className="card-header w-full text-left normal-case"
+            >
+              <span>Archived lectures ({archived.length})</span>
+              <span className="text-white/80 font-normal">{showArchived ? 'hide' : 'show'}</span>
+            </button>
+            {showArchived && (
+              <div className="p-4 space-y-2">
+                <p className="text-xs text-charcoal-light">
+                  These lectures were removed from the active list. Students cannot start new
+                  TeachBacks on them, and all their existing sessions, knowledge-check attempts
+                  and progress records were kept.
+                </p>
+                {archived.map((l) => (
+                  <div key={l.id} className="flex items-center justify-between gap-3 border border-zinc-200 rounded-md p-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-charcoal truncate">{l.title}</div>
+                      <div className="text-xs text-charcoal-light">
+                        Archived{l.archived_at ? ` on ${l.archived_at.slice(0, 10)}` : ''}
+                      </div>
+                    </div>
+                    <button onClick={() => restore(l.id)} className="btn-secondary whitespace-nowrap">Restore</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <DeleteDialog
+          preview={deleting}
+          busy={busy}
+          onCancel={() => setDeleting(null)}
+          onConfirm={confirmDelete}
+        />
       </div>
     )
   }
@@ -250,13 +435,18 @@ export default function Lectures() {
           <div>
             <label className="label">Lecture material — paste your notes, or upload a file</label>
             <textarea className="input min-h-[180px]" value={form.material_text} onChange={(e) => setForm((f) => ({ ...f, material_text: e.target.value }))} placeholder="Paste the lecture notes / slide text here…" />
-            <div className="flex items-center gap-3 mt-2">
+            <div className="flex flex-wrap items-center gap-3 mt-2">
               <label className="btn-secondary cursor-pointer">
                 Upload .txt / .md / .pdf
                 <input type="file" accept=".txt,.md,.pdf" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
               </label>
-              <span className="text-xs text-charcoal-light">The text is extracted and shown above so you can check it.</span>
+              <span className="text-xs text-charcoal-light">
+                The text is extracted, cleaned and shown above so you can check it. For slide PDFs,
+                repeated headers, footers, slide numbers and copyright lines are removed, and
+                <code className="mx-1">&lt;!-- page N --&gt;</code> markers record which slide each idea came from.
+              </span>
             </div>
+            {ingestion && <div className="mt-3"><IngestionReport report={ingestion} rawText={rawText} /></div>}
           </div>
         </div>
         <div className="flex gap-3">
@@ -306,10 +496,21 @@ export default function Lectures() {
       <WorkflowSteps active={1} />
       {messageBox}
       <p className="text-sm text-charcoal-light">
-        This is the automatic first draft from your lecture material. Rename, remove or add anything —
-        nothing is final until you press <strong>Start TeachBack</strong>. The meaning of each concept
-        should be what a student should be able to say back in their own words, not a textbook definition.
+        TeachBack prepared this draft from your lecture material — you do not need to enter anything
+        manually. Review the suggestions and edit only what is wrong; nothing is final until you press{' '}
+        <strong>Start TeachBack</strong>. The meaning of each concept should be what a student should be
+        able to say back in their own words, not a textbook definition.
       </p>
+
+      {/* how much of this draft is actually well supported — stated plainly */}
+      {(suggestions.structure?.notes || []).length > 0 && (
+        <div className="card p-4 text-sm bg-amber-50 border-amber-200 text-amber-900">
+          {suggestions.structure.notes.map((n, i) => <div key={i}>{n}</div>)}
+        </div>
+      )}
+      {lecture.ingestion?.page_count > 0 && (
+        <IngestionReport report={lecture.ingestion} rawText="" />
+      )}
 
       {/* concepts */}
       <div className="card">
@@ -319,7 +520,17 @@ export default function Lectures() {
         </div>
         <div className="p-4 space-y-3">
           {(draft.concepts || []).map((c, i) => (
-            <div key={i} className="border border-zinc-200 rounded-md p-3 space-y-3 relative">
+            <div key={i} className={`border rounded-md p-3 space-y-3 relative ${
+              c.confidence === 'weak' ? 'border-amber-300 bg-amber-50/40' : 'border-zinc-200'
+            }`}>
+              {c.confidence && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <ConfidenceBadge level={c.confidence} label={c.confidence_label} />
+                  {c.confidence === 'weak' && (
+                    <span className="text-xs text-amber-800 font-semibold">Review this one before publishing.</span>
+                  )}
+                </div>
+              )}
               <div className="grid md:grid-cols-3 gap-3">
                 <div>
                   <label className="label">Concept</label>
@@ -339,12 +550,35 @@ export default function Lectures() {
                   onBlur={(e) => setConcept(i, { facts: e.target.value.split('\n').map((f) => f.trim()).filter(Boolean) })}
                 />
               </div>
-              {(c.source_section || (c.source_sentences || []).length > 0 || (c.examples || []).length > 0) && (
-                <div className="text-xs text-charcoal-light bg-zinc-50 border border-zinc-100 rounded p-2">
-                  <span className="font-semibold text-charcoal">Why suggested? </span>
-                  {c.source_section && <>Found as the lecture section &quot;{c.source_section}&quot;. </>}
-                  {(c.source_sentences || [])[0] && <>Supported by: &quot;{c.source_sentences[0]}&quot; </>}
-                  {(c.examples || []).length > 0 && <>· Example kept: <code>{c.examples[0]}</code></>}
+              {(c.examples || []).length > 0 && (
+                <div>
+                  <label className="label">Examples from the lecture</label>
+                  <ul className="text-sm text-charcoal-light space-y-0.5">
+                    {(c.examples || []).map((ex, k) => (
+                      <li key={k}><code className="bg-zinc-50 border border-zinc-200 rounded px-1">{ex}</code></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {/* Provenance: where this came from, so the draft can be checked
+                  against the slides in seconds rather than re-read in full. */}
+              {(c.source_section || c.source_page || (c.source_sentences || []).length > 0) && (
+                <div className="text-xs text-charcoal-light bg-zinc-50 border border-zinc-100 rounded p-2 space-y-1">
+                  <div>
+                    <span className="font-semibold text-charcoal">Source: </span>
+                    {c.source_page
+                      ? <>Found on page {c.source_page}{c.source_section && <> under &ldquo;{c.source_section}&rdquo;</>}</>
+                      : c.source_section
+                        ? <>Found as the lecture section &ldquo;{c.source_section}&rdquo;</>
+                        : 'Found in the pasted notes'}
+                    {(c.source_pages || []).length > 1 && <> (also on page{c.source_pages.length > 2 ? 's' : ''} {c.source_pages.slice(1).join(', ')})</>}
+                  </div>
+                  {(c.source_sentences || [])[0] && (
+                    <div><span className="font-semibold text-charcoal">Supporting evidence: </span>&ldquo;{c.source_sentences[0]}&rdquo;</div>
+                  )}
+                  {c.confidence_reason && (
+                    <div><span className="font-semibold text-charcoal">Why suggested: </span>{c.confidence_reason}</div>
+                  )}
                 </div>
               )}
               <details>
@@ -480,6 +714,9 @@ export default function Lectures() {
           </span>
         </div>
         <div className="p-4 space-y-3">
+          {draft.quiz_note && (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3">{draft.quiz_note}</p>
+          )}
           {(draft.quiz || []).length === 0 && (
             <p className="text-sm text-charcoal-light">No questions — the knowledge check is optional; add or regenerate if you want one.</p>
           )}
@@ -582,13 +819,27 @@ export default function Lectures() {
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <button onClick={startTeachBack} disabled={busy || !(draft.concepts || []).some((c) => c.name.trim())} className="btn-primary">
           {busy ? 'Publishing…' : lecture.status === 'published' ? 'Update TeachBack' : 'Start TeachBack'}
         </button>
         <button onClick={() => saveDraft()} disabled={busy} className="btn-secondary">Save draft</button>
         <button onClick={() => { setView('list'); setMessage(null) }} className="btn-secondary">Back</button>
+        <button
+          onClick={() => askDelete(lecture.id)}
+          disabled={busy}
+          className="ml-auto px-4 py-2 rounded-md font-semibold text-brand border border-brand/40 hover:bg-brand hover:text-white transition-colors"
+        >
+          Delete lecture
+        </button>
       </div>
+
+      <DeleteDialog
+        preview={deleting}
+        busy={busy}
+        onCancel={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

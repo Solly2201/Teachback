@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Meter from '../components/Meter.jsx'
 import StateBadge from '../components/StateBadge.jsx'
-import { api, STATE_DESCRIPTIONS } from '../services/api.js'
+import { api, studentStateDescription, studentStateLabel } from '../services/api.js'
 
 /* Visual states for the concept progress timeline. */
 const TIMELINE_META = {
@@ -416,15 +416,15 @@ export default function TeachBack({ user }) {
           <div className="card-header">Current learning condition</div>
           <div className="p-5">
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <StateBadge label={result.state.label} size="lg" />
-              <p className="text-sm text-charcoal-light">{STATE_DESCRIPTIONS[result.state.label]}</p>
+              <StateBadge label={result.state.label} size="lg" audience="student" />
+              <p className="text-sm text-charcoal-light">{studentStateDescription(result.state.label)}</p>
             </div>
             {result.previous_state_label && result.previous_state_label !== result.state.label && (
               <div className="mt-4 flex items-center gap-3 text-sm">
                 <span className="text-xs font-semibold text-charcoal-light uppercase tracking-wide">Learning journey</span>
-                <StateBadge label={result.previous_state_label} />
+                <StateBadge label={result.previous_state_label} audience="student" />
                 <span className="text-zinc-400">→</span>
-                <StateBadge label={result.state.label} />
+                <StateBadge label={result.state.label} audience="student" />
               </div>
             )}
             {result.observation?.evidence?.length > 0 && (
@@ -438,11 +438,15 @@ export default function TeachBack({ user }) {
               </div>
             )}
             <div className="mt-4 pt-4 border-t border-zinc-100">
-              <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-2">
-                How sure is this estimate?
+              <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-1">
+                Model confidence in the current learning condition
               </div>
+              <p className="text-xs text-charcoal-light mb-2">
+                {result.state.posterior_meaning ||
+                  'How well each learning condition explains your session history — not a probability that you understand the topic.'}
+              </p>
               {Object.entries(result.state.posterior).map(([name, p]) => (
-                <Meter key={name} label={name} value={p} color={name === result.state.label ? '#A5231B' : '#A1A1AA'} />
+                <Meter key={name} label={studentStateLabel(name)} value={p} color={name === result.state.label ? '#A5231B' : '#A1A1AA'} />
               ))}
             </div>
           </div>

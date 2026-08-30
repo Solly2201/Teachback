@@ -54,6 +54,11 @@ class Topic(Base):
     reference_explanation: Mapped[str] = mapped_column(Text, default="")
     opening_prompt: Mapped[str] = mapped_column(Text, default="")
     extension_question: Mapped[str] = mapped_column(Text, default="")
+    # Set when the owning lecture is archived. An archived topic disappears
+    # from the active topic/lecture lists and from dashboard aggregates, but
+    # its rows stay in place so historical sessions, observations and quiz
+    # attempts remain readable and keep valid foreign keys.
+    archived_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, default=None)
 
     concepts: Mapped[list["Concept"]] = relationship(
         back_populates="topic", cascade="all, delete-orphan", order_by="Concept.position"
@@ -94,8 +99,15 @@ class Lecture(Base):
     draft: Mapped[dict] = mapped_column(JSON, default=dict)
     # untouched NLP suggestions, kept so the review step can show provenance
     suggestions: Mapped[dict] = mapped_column(JSON, default=dict)
-    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft | published
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft | published | archived
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Soft delete. A lecture with student history is archived rather than
+    # deleted so no learning record is ever destroyed by a UI action; a
+    # lecture with no history is deleted outright (see api/lectures.py).
+    archived_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, default=None)
+    # Ingestion report from the upload step (page count, what the cleanup
+    # removed and why) — shown on the review screen, never used for scoring.
+    ingestion: Mapped[dict] = mapped_column(JSON, default=dict)
 
     subject: Mapped["Subject"] = relationship()
     topic: Mapped["Topic"] = relationship()

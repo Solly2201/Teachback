@@ -16,6 +16,27 @@ STATE_NAMES = [
 
 STATE_KEYS = ["not_trying", "unclear", "struggling", "understanding", "confident"]
 
+# What a STUDENT sees. The internal five-state model and its names are
+# unchanged (they are what the HMM artifacts are mapped to, and faculty views
+# keep them), but "Not Trying" describes a motivation the system cannot
+# observe: all it ever sees is how much evidence a session produced. The
+# student-facing wording therefore describes the EVIDENCE, not the person.
+STATE_STUDENT_NAMES = [
+    "Very Little Evidence Yet",
+    "Still Unclear",
+    "Working Through It",
+    "Understanding",
+    "Confident",
+]
+
+STATE_STUDENT_DESCRIPTIONS = [
+    "Your recent sessions didn't give us much to go on yet — one short answer is enough to change that.",
+    "The core ideas haven't settled yet — a simpler explanation will help more than practice right now.",
+    "You're putting in real effort and some parts are still coming together — guided practice fits best here.",
+    "The concepts are coming together — the next step is applying them.",
+    "You've explained these ideas clearly across recent sessions — ready for an optional challenge.",
+]
+
 NOT_TRYING, UNCLEAR, STRUGGLING, UNDERSTANDING, CONFIDENT = range(5)
 
 # Observation feature order used everywhere (synthetic data, HMM, live analysis).

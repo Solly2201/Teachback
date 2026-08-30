@@ -48,7 +48,7 @@ export default function Progress({ user }) {
                     <span className="text-xs font-bold uppercase tracking-wide text-charcoal-light">
                       Session {timeline.length - idx}
                     </span>
-                    <StateBadge label={o.state_label} />
+                    <StateBadge label={o.state_label} audience="student" />
                     <span className="text-xs text-charcoal-light">
                       {o.topic_name || ''}{o.created_at ? ` · ${new Date(o.created_at).toLocaleDateString()}` : ''}
                     </span>
@@ -140,7 +140,7 @@ export default function Progress({ user }) {
                     {o.created_at ? new Date(o.created_at).toLocaleDateString() : '—'}
                   </td>
                   <td className="px-4 py-2.5 font-medium text-charcoal">{o.topic_name || '—'}</td>
-                  <td className="px-4 py-2.5"><StateBadge label={o.state_label} /></td>
+                  <td className="px-4 py-2.5"><StateBadge label={o.state_label} audience="student" /></td>
                   <td className="px-4 py-2.5 tabular-nums">{Math.round(o.features[0] * 100)}%</td>
                   <td className="px-4 py-2.5 tabular-nums">{Math.round(o.features[1] * 100)}%</td>
                   <td className="px-4 py-2.5 tabular-nums">{Math.round(o.features[4] * 100)}%</td>

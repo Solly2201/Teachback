@@ -2,32 +2,42 @@
 
 Pipeline (structure first, semantics second):
 
-  lecture text (pasted / extracted from a file)
+  lecture text (pasted, or extracted+cleaned from a PDF by nlp/pdf_clean.py)
       -> structured parse (nlp/lecture_parser.py): headings, bullets, code
-         blocks, examples, and special sections (objectives / connections /
-         common mistakes / summary)
+         blocks, examples, page provenance, and the special sections
+         (objectives / connections / common mistakes / summary)
       -> STRUCTURED path (real headings found): each content section becomes a
-         candidate concept — name from the heading, meaning from the section's
-         explanatory prose, supporting facts from the remaining short
-         sentences/bullets, examples kept as examples (never mined as words)
+         CANDIDATE concept, not a concept. A heading is evidence that a concept
+         might be here; it is not proof. Every candidate must earn its place:
+            * it is not document structure ("Agenda", "Lesson: X Overview")
+            * the lecture actually explains it — a definition-like sentence, or
+              supporting facts plus prose
+            * its meaning is CHOSEN, not taken blindly from the first line
+            * its facts are ranked, not the first N leftovers
+         Candidates are then scored (definition, facts, examples, objective
+         match, semantic centrality) and the best ones kept, with an honest
+         "strong / moderate / weak evidence" label for the review screen.
       -> UNSTRUCTURED fallback (plain prose): content-word n-grams scored by
-         frequency x embedding centrality, but a candidate is only kept when
-         the lecture actually explains it (a sentence where it appears early
-         and gets elaborated) — generic nouns without explanatory support are
-         rejected
-      -> relationships: explicit "A → label → B" lines from an Important
-         Connections section first, then sentences mentioning two concepts
-      -> misconception suggestions: lines from a Common Mistakes section
-         ("Students may think X ... actually Y" splits into claim +
-         clarification), plus misconceptions already authored in the system
+         frequency x embedding centrality, kept only when the lecture actually
+         explains them; meanings and facts go through the same selectors
+      -> relationships: explicit "A -> label -> B" lines from an Important
+         Connections section are authoritative. Prose-inferred relationships
+         are deliberately conservative: two concepts sharing a sentence is NOT
+         a pedagogical relationship, so an explicit relational cue (uses,
+         enables, consists of, produces, ...) must sit between them. A false
+         relationship is worse than a missing one because it later shapes how
+         a student's answer is judged.
+      -> misconception suggestions: lines from a Common Mistakes section, plus
+         misconceptions already authored in the system
       -> deterministic question drafts per concept (main / easier / probe /
-         application), grounded in the concept's own facts and examples
+         application), grounded in that concept's own facts and examples
       -> suggested activities built from the lecture's own concepts
 
-Every concept keeps its provenance (source_section, source_sentences,
-examples) so the review screen can show WHERE a suggestion came from.
-Everything produced here is a SUGGESTION for the faculty review screen —
-nothing becomes authoritative until the teacher publishes it.
+Every concept keeps its provenance (source_section, source_page,
+source_sentences, examples) so the review screen can show WHERE a suggestion
+came from and how strong the evidence was. Everything produced here is a
+SUGGESTION for the faculty review screen — nothing becomes authoritative
+until the teacher publishes it.
 """
 import math
 import re
@@ -36,7 +46,9 @@ import numpy as np
 
 from .analyzer import _STOPWORDS, content_words, split_sentences
 from .embedder import cosine_matrix, embed
-from .lecture_parser import is_generic_heading, parse_connection_line, parse_lecture
+from .lecture_parser import (_is_code_like, is_generic_heading,
+                             parse_connection_line, parse_lecture,
+                             strip_structural_prefix)
 
 MAX_CONCEPTS = 8
 MAX_RELATIONSHIPS = 6
@@ -48,6 +60,12 @@ MISCON_SUGGEST_T = 0.45      # configured misconception close enough to suggest
 MAX_FACTS = 4
 MAX_EXAMPLES = 3
 
+MIN_MEANING_SCORE = 2        # below this, no sentence is a usable "meaning"
+MIN_FACT_SCORE = 2           # below this, a sentence is not an "important fact"
+MIN_CANDIDATE_SCORE = 1.5    # below this, a heading is not a teachable concept
+OBJECTIVE_MATCH_T = 0.45     # objective <-> candidate similarity that counts
+MAX_REL_SPAN = 12            # words allowed between two linked concepts
+
 # words that are frequent in lecture notes but are never useful concepts on
 # their own (they can still appear inside a longer phrase or a heading)
 _LECTURE_NOISE = {"example", "examples", "lecture", "today", "slide", "slides",
@@ -55,7 +73,14 @@ _LECTURE_NOISE = {"example", "examples", "lecture", "today", "slide", "slides",
                   "letter", "letters", "value", "values", "thing", "things",
                   "word", "words", "number", "numbers", "way", "ways", "part",
                   "parts", "item", "items", "output", "result", "results",
-                  "line", "lines", "code", "position", "positions"}
+                  "line", "lines", "code", "position", "positions",
+                  # generic nouns that a slide deck repeats without teaching
+                  "organization", "organizations", "organisation", "organisations",
+                  "system", "systems", "information", "service", "services",
+                  "resource", "resources", "customer", "customers", "user",
+                  "users", "company", "companies", "business", "businesses",
+                  "provider", "providers", "decade", "year", "years", "manner",
+                  "module", "lesson", "course", "copyright", "corporation"}
 
 # common lecture verbs: never a concept on their own, and trimmed from the
 # edges of candidate phrases ("Assignment uses" -> "Assignment")
@@ -70,27 +95,241 @@ _COMMON_VERBS = {"use", "uses", "used", "using", "support", "supports", "combine
                  "computed", "tell", "tells", "told", "propagate", "propagates", "propagated",
                  "propagating", "measure", "measures", "measured", "update", "updates", "updated",
                  "updating", "decrease", "decreases", "decreased", "increase", "increases",
-                 "increased", "change", "changes", "changed", "changing"}
+                 "increased", "change", "changes", "changed", "changing",
+                 "map", "maps", "mapped", "happen", "happens", "happened", "land",
+                 "lands", "landed", "go", "goes", "went", "put", "puts", "keep",
+                 "keeps", "kept", "hold", "holds", "held", "need", "needs", "needed",
+                 "find", "finds", "start", "starts", "started", "begin", "begins",
+                 "add", "adds", "added", "remove", "removes", "removed", "return",
+                 "returns", "returned", "create", "creates", "created", "describe",
+                 "describes", "described", "represent", "represents", "represented",
+                 "mention", "mentions", "mentioned", "talk", "talks", "talked",
+                 "discuss", "discusses", "discussed", "look", "looks", "looked",
+                 "cover", "covers", "covered", "explain", "explains", "explained",
+                 "define", "defines", "defined", "consist", "consists", "enable",
+                 "enables", "enabled", "require", "requires", "required"}
+
+# Discourse markers that introduce lecture ADMIN rather than lecture content
+# ("we also mentioned the canteen timings"). A candidate whose only support is
+# a narration sentence is not a taught idea. Structural, not subject-specific.
+_NARRATION_RE = re.compile(
+    r"\b(we (also |then |just |briefly )?(talked|spoke|mentioned|discussed|looked|covered|"
+    r"went over|will (look|talk|cover))|today we|last (class|week|time)|next (class|week|time)|"
+    r"don't forget|any questions|as i (said|mentioned)|see you|reminder that)\b", re.I)
+
+# ---------------------------------------------------------------------------
+# sentence-level quality signals (used for meanings AND facts)
+# ---------------------------------------------------------------------------
+
+# predicates that mark a sentence as explaining/defining something
+_DEFINITION_RE = re.compile(
+    r"\b(is|are|was|were|means|meaning|refers to|is called|are called|is known as|"
+    r"is defined as|describes?|represents?|consists? of|contains?|includes?|"
+    r"is made up of|made up of|allows?|enables?|lets|provides?|supplies|offers?|"
+    r"is used (?:to|for)|are used (?:to|for)|helps?|happens? when|occurs? when|"
+    r"stands for|can be|cannot be|builds?|creates?|produces?|works? by|"
+    r"gives?|returns?|stores?|holds?|starts?|breaks?)\b", re.I)
+
+# a much broader "this sentence asserts something" test
+_VERBISH_RE = re.compile(
+    r"\b(is|are|was|were|be|been|being|has|have|had|can|cannot|could|may|might|will|"
+    r"would|should|must|does|do|did|not)\b|\b\w{3,}(?:s|es|ed|ing)\b", re.I)
+
+# unambiguous document metadata that must never become a meaning or a fact
+_METADATA_RE = re.compile(
+    r"(©|\(c\)\s*(19|20)\d{2}|\bcopyright\b|\ball rights reserved\b|™|®|"
+    r"\bconfidential\b|\bproprietary\b|\btrademarks?\b|"
+    r"^\s*(module|lesson|chapter|slide|unit|section|week|page)\s*\d+\b|"
+    r"^\s*(figure|fig\.|table|exhibit)\s*\d+\b|"
+    r"^\s*(source|reference|references|see also|adapted from)\s*:|"
+    r"^\s*(https?://|www\.)|@\w+\.\w+)", re.I)
+
+_TRAILING_FRAGMENT_RE = re.compile(r"[,;:]\s*$")
+
+
+def _sentence_signals(text: str) -> dict:
+    """Deterministic quality signals for one candidate sentence."""
+    s = (text or "").strip()
+    words = s.split()
+    cw = content_words(s)
+    return {
+        "text": s,
+        "n_words": len(words),
+        "n_content": len(set(cw)),
+        "metadata": bool(_METADATA_RE.search(s)),
+        "code": _is_code_like(s),
+        "definition": bool(_DEFINITION_RE.search(s)),
+        "declarative": bool(_VERBISH_RE.search(s)),
+        "fragment": bool(_TRAILING_FRAGMENT_RE.search(s)) or len(words) < 4,
+        "has_number": bool(re.search(r"(?<![\w.])\d+(?![\w.])", s)),
+    }
+
+
+def _name_tokens(name: str) -> list[str]:
+    return [_norm_word(w) for w in re.findall(r"[A-Za-z][A-Za-z\-']*", name or "")]
+
+
+def _mentions(name: str, text: str) -> bool:
+    targets = _name_tokens(name)
+    if not targets:
+        return False
+    words = set(_norm_word(w) for w in re.findall(r"[A-Za-z][A-Za-z\-']*", text or ""))
+    return all(t in words for t in targets)
+
+
+def _meaning_score(name: str, sig: dict, first: bool) -> float:
+    """How well this sentence works as "what a student should be able to say"."""
+    if sig["metadata"]:
+        return -10.0
+    if sig["code"]:
+        return -6.0
+    score = 0.0
+    if _mentions(name, sig["text"]):
+        score += 3.0
+        if sig["text"].lower().lstrip("a ").lstrip("an ").lstrip("the ").startswith(
+                (name or "").lower()[:12]):
+            score += 1.0
+    if sig["definition"]:
+        score += 3.0
+    if 6 <= sig["n_words"] <= 40:
+        score += 2.0
+    elif 4 <= sig["n_words"] < 6:
+        score += 1.0
+    else:
+        score -= 2.0
+    if not sig["declarative"]:
+        score -= 3.0
+    if sig["fragment"]:
+        score -= 2.0
+    if sig["text"].rstrip().endswith(":"):
+        score -= 2.0
+    if first:
+        score += 1.0  # the lead sentence of a section IS a mild prior
+    return score
+
+
+def best_meaning(name: str, candidates: list[str]) -> tuple[str, float]:
+    """Pick the best explanation sentence for a concept, or ("", score).
+
+    Deliberately NOT "the first sentence under the heading": a slide's first
+    line is as likely to be a lead-in, a fragment or a leftover artifact as it
+    is to be the definition.
+    """
+    best, best_score = "", MIN_MEANING_SCORE - 0.001
+    for i, text in enumerate(candidates):
+        sig = _sentence_signals(text)
+        score = _meaning_score(name, sig, first=(i == 0))
+        if score > best_score:
+            best, best_score = sig["text"], score
+    return best, best_score
+
+
+def _overlap_ratio(a: str, b: str) -> float:
+    wa, wb = set(content_words(a)), set(content_words(b))
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / min(len(wa), len(wb))
+
+
+def _fact_score(name: str, sig: dict) -> float:
+    """How well this sentence works as a specific, checkable lecture claim."""
+    if sig["metadata"]:
+        return -10.0
+    if sig["code"]:
+        return -6.0
+    score = 0.0
+    if 5 <= sig["n_words"] <= 30:
+        score += 2.0
+    elif sig["n_words"] < 5:
+        score -= 3.0
+    else:
+        score -= 1.0
+    score += 2.0 if sig["declarative"] else -4.0
+    if sig["fragment"]:
+        score -= 2.0
+    if _mentions(name, sig["text"]):
+        score += 2.0
+    if sig["has_number"]:
+        score += 1.0  # "Indexes start at 0" — specific and checkable
+    if sig["n_content"] >= 3:
+        score += 1.0
+    return score
+
+
+def rank_facts(name: str, meaning: str, candidates: list[str],
+               limit: int = MAX_FACTS) -> list[str]:
+    """Rank supporting claims instead of taking the first N leftovers.
+
+    A fact must say something about the concept, must be a complete claim
+    rather than a fragment ("organizations", "the coming decade"), and must
+    not simply restate the meaning.
+    """
+    scored = []
+    seen = set()
+    for i, text in enumerate(candidates):
+        sig = _sentence_signals(text)
+        key = " ".join(sorted(set(content_words(text))))
+        if not key or key in seen:
+            continue
+        if meaning and _overlap_ratio(text, meaning) >= 0.8:
+            continue
+        score = _fact_score(name, sig)
+        if score < MIN_FACT_SCORE:
+            continue
+        seen.add(key)
+        scored.append((-score, i, sig["text"]))
+    scored.sort()
+    return [t for _, _, t in scored[:limit]]
 
 
 def extract_text(filename: str, data: bytes) -> str:
-    """Text from an uploaded lecture file. Supports .txt/.md and .pdf."""
+    """Text from an uploaded lecture file (see extract_material for the report)."""
+    return extract_material(filename, data)[0]
+
+
+def extract_material(filename: str, data: bytes) -> tuple[str, dict]:
+    """Lecture text plus an ingestion report, from an uploaded file.
+
+    .txt/.md keep their existing behaviour untouched — they already carry the
+    structure the parser wants. .pdf goes through the layout-aware extractor
+    and the deterministic cleanup, and comes back as ordinary Markdown notes
+    with ``<!-- page N -->`` provenance markers, so BOTH paths feed exactly
+    the same downstream pipeline.
+    """
     name = (filename or "").lower()
     if name.endswith((".txt", ".md")):
         try:
-            return data.decode("utf-8")
+            text = data.decode("utf-8")
         except UnicodeDecodeError:
-            return data.decode("latin-1")
+            text = data.decode("latin-1")
+        return text, {"kind": "text", "scanned": False, "page_count": None,
+                      "removed_total": 0, "removed_by_reason": []}
     if name.endswith(".pdf"):
-        try:
-            from io import BytesIO
+        from .pdf_clean import pdf_to_notes
+        from .pdf_extract import PdfExtractionError
 
-            from pypdf import PdfReader
+        try:
+            text, report = pdf_to_notes(data)
+        except PdfExtractionError as exc:
+            raise ValueError(str(exc)) from exc
         except ImportError as exc:  # pragma: no cover - environment dependent
-            raise ValueError("PDF support needs the 'pypdf' package (pip install pypdf).") from exc
-        reader = PdfReader(BytesIO(data))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+            raise ValueError("PDF support needs the 'pdfplumber' or 'pypdf' package.") from exc
+        report["kind"] = "pdf"
+        if report.get("scanned"):
+            raise ScannedPdfError(
+                "This PDF appears to contain scanned or image-based pages and very little "
+                "selectable text. Please use an OCR-enabled PDF, paste the text directly, "
+                "or use the prepared-note workflow.", report)
+        return text, report
     raise ValueError("Unsupported file type — upload .txt, .md or .pdf, or paste the notes as text.")
+
+
+class ScannedPdfError(ValueError):
+    """An image-only PDF: reported honestly instead of pretending it worked."""
+
+    def __init__(self, message: str, report: dict):
+        super().__init__(message)
+        self.report = report
 
 
 def _norm_word(w: str) -> str:
@@ -205,36 +444,202 @@ def _suggested_activities(title: str, concepts: list[dict], relationships: list[
 
 
 # ---------------------------------------------------------------------------
-# structured path: concepts from document sections
+# structured path: scored candidate concepts from document sections
 # ---------------------------------------------------------------------------
 
-def _concepts_from_sections(doc: dict, max_concepts: int) -> list[dict]:
-    concepts = []
-    seen_names = set()
-    for sec in doc["sections"]:
-        name = _display_name(sec["heading"].strip())
-        key = _norm_phrase(name)
-        if not key or key in seen_names or is_generic_heading(name):
+CONFIDENCE_LABELS = {
+    "strong": "Strongly supported",
+    "moderate": "Moderately supported",
+    "weak": "Weak evidence — review carefully",
+}
+
+
+def _merge_key(heading: str) -> str:
+    """Identity of a heading for merging. Keeps digits, because "Layer 1" and
+    "Layer 2" are two concepts even though "Module 3" and "Module 7" are one
+    navigation label (those are filtered as structure before we get here)."""
+    return re.sub(r"[^a-z0-9]+", " ", (heading or "").lower()).strip()
+
+
+def _merge_sections(sections: list[dict]) -> list[dict]:
+    """One candidate per distinct heading, evidence merged across its slides.
+
+    A slide deck often returns to the same title ("Cloud Computing" on slides
+    1, 2 and 9). That is one concept taught in several places, not three.
+    """
+    merged: dict[str, dict] = {}
+    order: list[str] = []
+    for sec in sections:
+        heading = _clean_candidate_name(sec["heading"])
+        key = _merge_key(heading)
+        if not key:
             continue
-        prose = list(sec["sentences"]) + [b for b in sec["bullets"] if len(b.split()) >= 3]
-        if not prose and not sec["examples"]:
-            continue  # a bare heading with no content is not a teachable concept
-        meaning = prose[0] if prose else ""
-        facts = [p for p in prose[1:] if len(p.split()) <= 30][:MAX_FACTS]
-        concepts.append({
-            "name": name,
-            "description": meaning,
-            "facts": facts,
-            "examples": sec["examples"][:MAX_EXAMPLES],
-            "source_section": sec["heading"],
-            "source_sentences": prose[: 1 + MAX_FACTS],
-            "count": 1,
-            "score": 1.0,
-        })
-        seen_names.add(key)
-        if len(concepts) >= max_concepts:
-            break
-    return concepts
+        if key not in merged:
+            merged[key] = {"heading": heading, "level": sec["level"],
+                           "sentences": [], "bullets": [], "examples": [],
+                           "page": sec.get("page"), "pages": [], "occurrences": 0}
+            order.append(key)
+        entry = merged[key]
+        entry["occurrences"] += 1
+        entry["sentences"] += sec["sentences"]
+        entry["bullets"] += sec["bullets"]
+        entry["examples"] += sec["examples"]
+        if sec.get("page") and sec["page"] not in entry["pages"]:
+            entry["pages"].append(sec["page"])
+        if entry["page"] is None:
+            entry["page"] = sec.get("page")
+    return [merged[k] for k in order]
+
+
+def _clean_candidate_name(heading: str) -> str:
+    """Strip navigation noise from a heading before it becomes a concept name."""
+    name = strip_structural_prefix(heading or "").strip()
+    return (name or (heading or "").strip()).strip(" .:-–—")
+
+
+def _candidate_from_section(sec: dict) -> dict | None:
+    """Turn one merged section into a scored concept candidate, or None."""
+    name = _display_name(sec["heading"])
+    if not name or is_generic_heading(name):
+        return None
+    prose = list(sec["sentences"]) + [b for b in sec["bullets"] if len(b.split()) >= 3]
+    if not prose:
+        return None  # a bare heading with no content is not a teachable concept
+
+    meaning, meaning_score = best_meaning(name, prose)
+    remaining = [p for p in prose if p != meaning]
+    facts = rank_facts(name, meaning, remaining)
+    examples = [e for e in sec["examples"] if not _METADATA_RE.search(e)][:MAX_EXAMPLES]
+
+    signals = []
+    if meaning:
+        signals.append("a definition-like sentence")
+    if facts:
+        signals.append(f"{len(facts)} supporting statement{'s' if len(facts) > 1 else ''}")
+    if examples:
+        signals.append("a worked example")
+    if sec["occurrences"] > 1:
+        signals.append(f"taught on {sec['occurrences']} slides")
+
+    score = 0.0
+    score += 3.0 if meaning else 0.0
+    score += min(len(facts), 3) * 1.0
+    score += 1.5 if examples else 0.0
+    score += 0.5 if sec["occurrences"] > 1 else 0.0
+    if not meaning and len(facts) < 1:
+        score -= 3.0
+
+    return {
+        "name": name,
+        "description": meaning,
+        "facts": facts,
+        "examples": examples,
+        "source_section": sec["heading"],
+        "source_page": sec.get("page"),
+        "source_pages": sec.get("pages") or ([sec["page"]] if sec.get("page") else []),
+        "source_sentences": [x for x in ([meaning] + facts) if x],
+        "count": sec["occurrences"],
+        "score": round(score, 3),
+        "_base_score": score,
+        "_signals": signals,
+        "_has_meaning": bool(meaning),
+        "_meaning_score": round(meaning_score, 2),
+    }
+
+
+def _objective_similarity(candidates: list[dict], objectives: list[str]) -> list[float]:
+    """Semantic match between each candidate and the teacher's own objectives.
+
+    Teacher objectives are authoritative about what matters in this lecture,
+    so they RANK candidates. They never invent one: a concept still has to be
+    supported by the material itself.
+    """
+    if not candidates or not objectives:
+        return [0.0] * len(candidates)
+    texts = [f"{c['name']}. {c.get('description', '')}".strip() for c in candidates]
+    emb = embed(texts + objectives)
+    cand_emb, obj_emb = emb[:len(texts)], emb[len(texts):]
+    sims = cosine_matrix(cand_emb, obj_emb)
+    return [float(np.max(sims[i])) for i in range(len(texts))]
+
+
+def _centrality(candidates: list[dict], document_text: str) -> list[float]:
+    if not candidates or not document_text.strip():
+        return [0.0] * len(candidates)
+    texts = [f"{c['name']}. {c.get('description', '')}".strip() for c in candidates]
+    emb = embed(texts + [document_text])
+    sims = cosine_matrix(emb[:len(texts)], emb[len(texts):])
+    return [float(sims[i, 0]) for i in range(len(texts))]
+
+
+def _confidence_of(cand: dict, objective_match: float) -> tuple[str, str]:
+    strong_support = cand["_has_meaning"] and (cand["facts"] or cand["examples"])
+    if strong_support:
+        level = "strong"
+    elif cand["_has_meaning"] or len(cand["facts"]) >= 2:
+        level = "moderate"
+    else:
+        level = "weak"
+    signals = list(cand["_signals"])
+    if objective_match >= OBJECTIVE_MATCH_T:
+        signals.append("matches one of your learning objectives")
+        if level == "weak":
+            level = "moderate"
+    where = ""
+    if cand.get("source_pages"):
+        pages = cand["source_pages"]
+        where = (f"page {pages[0]}" if len(pages) == 1
+                 else "pages " + ", ".join(str(p) for p in pages[:3]))
+    parts = []
+    if cand.get("source_section"):
+        parts.append(f'Found under "{cand["source_section"]}"' + (f" on {where}" if where else ""))
+    elif where:
+        parts.append(f"Found on {where}")
+    if signals:
+        parts.append("supported by " + ", ".join(signals))
+    reason = "; ".join(parts) or "Suggested from repeated mentions in the material."
+    return level, reason
+
+
+def _concepts_from_sections(doc: dict, objectives: list[str], max_concepts: int) -> list[dict]:
+    merged = _merge_sections(doc["sections"])
+    candidates = [c for c in (_candidate_from_section(s) for s in merged) if c]
+    if not candidates:
+        return []
+
+    document_text = " ".join(
+        s for sec in doc["sections"] for s in (sec["sentences"] + sec["bullets"])
+    )[:6000]
+    obj_sims = _objective_similarity(candidates, objectives)
+    centralities = _centrality(candidates, document_text)
+
+    kept = []
+    for i, cand in enumerate(candidates):
+        obj = obj_sims[i]
+        total = cand["_base_score"] + 2.0 * obj + 2.0 * centralities[i]
+        prioritised = obj >= OBJECTIVE_MATCH_T
+        # a heading only becomes a concept when the lecture explains it — or
+        # when the teacher's own objective names it AND there is some prose
+        supported = cand["_has_meaning"] or len(cand["facts"]) >= 1
+        if not supported and not prioritised:
+            continue
+        if total < MIN_CANDIDATE_SCORE and not prioritised:
+            continue
+        level, reason = _confidence_of(cand, obj)
+        cand.update({"score": round(total, 3), "confidence": level,
+                     "confidence_label": CONFIDENCE_LABELS[level],
+                     "confidence_reason": reason,
+                     "objective_match": round(obj, 3)})
+        kept.append((total, i, cand))
+
+    # rank by evidence, keep the best, then restore document order so the
+    # review screen reads in the order the lecture taught things
+    kept.sort(key=lambda t: (-t[0], t[1]))
+    selected = sorted(kept[:max_concepts], key=lambda t: t[1])
+    out = []
+    for _, _, cand in selected:
+        out.append({k: v for k, v in cand.items() if not k.startswith("_")})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +687,8 @@ def _has_explanatory_support(name: str, sentences: list[str]) -> str | None:
         words = [_norm_word(w) for w in re.findall(r"[A-Za-z][A-Za-z\-']*", s)]
         if len(words) < 6 or not all(t in words for t in targets):
             continue
+        if _METADATA_RE.search(s) or _is_code_like(s) or _NARRATION_RE.search(s):
+            continue
         first_pos = words.index(targets[0])
         if first_pos <= max(2, len(words) // 2 - 1):
             return s
@@ -290,7 +697,8 @@ def _has_explanatory_support(name: str, sentences: list[str]) -> str | None:
 
 def _concepts_from_prose(doc: dict, title: str, objectives: list[str],
                          max_concepts: int) -> list[dict]:
-    sentences = [s for sec in doc["sections"] for s in sec["sentences"]]
+    sentences = [s for sec in doc["sections"] for s in sec["sentences"]
+                 if not _METADATA_RE.search(s)]
     if not sentences:
         return []
     candidates = sorted(_candidate_phrases(sentences), key=lambda c: -c["count"])[:MAX_CANDIDATES]
@@ -341,22 +749,38 @@ def _concepts_from_prose(doc: dict, title: str, objectives: list[str],
 
     concepts = []
     for i, c, support in kept:
+        name = _display_name(c["display"])
         sims = cosine_matrix(cand_emb[i:i + 1], sent_emb)[0]
         best_j = int(np.argmax(sims))
-        meaning = support or (sentences[best_j] if float(sims[best_j]) >= 0.3 else "")
-        # other sentences that mention the concept become supporting facts
-        name_words = set(_norm_phrase(c["display"]).split())
-        facts = [s for s in sentences
-                 if s != meaning and name_words <= set(_norm_phrase(s).split())][:MAX_FACTS]
+        # the same deliberate meaning selection the structured path uses, over
+        # the sentences that actually mention the candidate
+        mentioning = [s for s in sentences if _mentions(name, s)]
+        pool = ([support] if support else []) + mentioning
+        if float(sims[best_j]) >= 0.3 and sentences[best_j] not in pool:
+            pool.append(sentences[best_j])
+        meaning, _ = best_meaning(name, pool)
+        facts = rank_facts(name, meaning, [s for s in mentioning if s != meaning])
+        has_support = bool(meaning or facts)
+        level = "strong" if (meaning and facts) else ("moderate" if has_support else "weak")
         concepts.append({
-            "name": _display_name(c["display"]),
+            "name": name,
             "description": meaning,
             "facts": facts,
             "examples": [],
             "source_section": "",
+            "source_page": None,
+            "source_pages": [],
             "source_sentences": [x for x in ([meaning] + facts) if x],
             "count": c["count"],
             "score": round(float(sims[best_j]), 3),
+            "confidence": level,
+            "confidence_label": CONFIDENCE_LABELS[level],
+            "confidence_reason": (
+                f"Mentioned {c['count']} times in the notes"
+                + ("; explained in a full sentence" if meaning else "")
+                + (f"; {len(facts)} supporting statements" if facts else "")
+            ),
+            "objective_match": 0.0,
         })
     return concepts
 
@@ -375,34 +799,78 @@ def _mention_index(concept_name: str, sentence_words: list[str]) -> int | None:
     return norm_sentence.index(targets[0])
 
 
+# A relationship claims something pedagogical about two ideas. Two concepts
+# merely appearing in one sentence claims nothing, so an explicit relational
+# cue must sit BETWEEN them. Ordered: the first match wins, so the specific
+# patterns come before the generic ones.
+_REL_CUE_PATTERNS = [
+    (r"\bis made up of\b|\bmade up of\b|\bconsists? of\b|\bcomposed of\b", "consists of"),
+    (r"\bis part of\b|\bpart of\b|\bbelongs? to\b", "is part of"),
+    (r"\bcontains?\b|\bincludes?\b|\bholds?\b", "contains"),
+    (r"\bconverts?\b|\btransforms?\b|\bturns?\b", "converts into"),
+    (r"\bproduces?\b|\bresults? in\b|\breturns?\b|\bcreates?\b|\bgenerates?\b", "produces"),
+    (r"\bcauses?\b|\bleads? to\b", "leads to"),
+    (r"\brequires?\b|\bdepends? on\b|\bneeds?\b", "requires"),
+    (r"\benables?\b|\ballows?\b|\blets\b|\bmakes? it possible\b", "enables"),
+    (r"\bprovides?\b|\bsupplies\b|\boffers?\b|\bdelivers?\b", "provides"),
+    (r"\bis based on\b|\bbased on\b|\bbuilt on\b|\brelies on\b", "is based on"),
+    (r"\baccesses?\b|\breads?\b|\bextracts?\b|\bselects?\b|\bretrieves?\b", "accesses"),
+    (r"\bcomputes?\b|\bcalculates?\b|\bmeasures?\b", "computes"),
+    (r"\bupdates?\b|\bmodifies?\b|\badjusts?\b", "updates"),
+    (r"\bstores?\b|\brepresents?\b|\bdescribes?\b", "describes"),
+    (r"\bunlike\b|\bcompared (?:to|with)\b|\bwhereas\b|\brather than\b|\binstead of\b",
+     "contrasts with"),
+    (r"\buses?\b|\busing\b|\bapplies\b|\bapply\b", "uses"),
+]
+
+
+def _relational_cue(words: list[str]) -> str | None:
+    """The relational label expressed by the words between two concepts."""
+    if not words or len(words) > MAX_REL_SPAN:
+        return None
+    span = " ".join(words).lower()
+    for pattern, label in _REL_CUE_PATTERNS:
+        if re.search(pattern, span):
+            return label
+    return None
+
+
 def _relationships_from_doc(doc: dict, concepts: list[dict]) -> list[dict]:
     relationships = []
     seen_pairs = set()
 
-    # 1) explicit "A → label → B" lines from an Important Connections section
+    # 1) explicit "A -> label -> B" lines from an Important Connections
+    #    section. This is the teacher's own statement and stays authoritative.
     for line in doc["connections"]:
         parsed = parse_connection_line(line)
         if parsed and (parsed["source"], parsed["target"]) not in seen_pairs:
-            relationships.append({**parsed, "source_sentence": line})
+            relationships.append({**parsed, "source_sentence": line, "origin": "explicit"})
             seen_pairs.add((parsed["source"], parsed["target"]))
         elif not parsed:
-            # a plain connection sentence: try to anchor it to two concepts
+            # a plain connection sentence in an explicit connections section:
+            # the teacher put it there on purpose, so anchoring it to two
+            # concepts is enough
             words = re.findall(r"[A-Za-z][A-Za-z\-']*", line)
             mentioned = sorted(
                 (idx, c["name"]) for c in concepts
                 if (idx := _mention_index(c["name"], words)) is not None
             )
             if len(mentioned) >= 2:
-                a, b = mentioned[0][1], mentioned[1][1]
+                (ia, a), (ib, b) = mentioned[0], mentioned[1]
+                label = _relational_cue(words[ia + 1:ib]) or "relates to"
                 if (a, b) not in seen_pairs:
-                    relationships.append({"source": a, "label": "relates to", "target": b,
-                                          "description": line, "source_sentence": line})
+                    relationships.append({"source": a, "label": label, "target": b,
+                                          "description": line, "source_sentence": line,
+                                          "origin": "explicit"})
                     seen_pairs.add((a, b))
         if len(relationships) >= MAX_RELATIONSHIPS:
             return relationships
 
-    # 2) prose sentences that mention two concepts in order
-    sentences = [s for sec in doc["sections"] for s in sec["sentences"]]
+    # 2) prose sentences. CONSERVATIVE by design: co-mention alone is not a
+    #    relationship — a relational cue must connect the two concepts, and
+    #    they must be close enough for the cue to be about them.
+    sentences = [s for sec in doc["sections"] for s in sec["sentences"]
+                 if not _METADATA_RE.search(s) and len(s.split()) <= 45]
     for s in sentences:
         sentence_words = re.findall(r"[A-Za-z][A-Za-z\-']*", s)
         mentioned = sorted(
@@ -412,11 +880,12 @@ def _relationships_from_doc(doc: dict, concepts: list[dict]) -> list[dict]:
         for (ia, a), (ib, b) in zip(mentioned, mentioned[1:]):
             if (a, b) in seen_pairs or a == b:
                 continue
-            between = sentence_words[ia + 1:ib]
-            link = next((w.lower() for w in between if w.lower() not in _STOPWORDS), None)
-            label = link if link and len(between) <= 6 else "relates to"
+            label = _relational_cue(sentence_words[ia + 1:ib])
+            if label is None:
+                continue  # no relational evidence: do NOT invent a connection
             relationships.append({"source": a, "label": label, "target": b,
-                                  "description": s, "source_sentence": s})
+                                  "description": s, "source_sentence": s,
+                                  "origin": "prose"})
             seen_pairs.add((a, b))
             if len(relationships) >= MAX_RELATIONSHIPS:
                 return relationships
@@ -440,7 +909,7 @@ def _misconceptions_from_doc(doc: dict) -> list[dict]:
         if m:
             clarification = claim[m.end():].strip().rstrip(".")
             claim = claim[:m.start()].strip().rstrip(".")
-        if not claim:
+        if not claim or _METADATA_RE.search(claim):
             continue
         claim = claim[0].upper() + claim[1:]
         if clarification:
@@ -476,20 +945,26 @@ def prepare_lecture(material: str, title: str = "", description: str = "",
     empty = {"concepts": [], "relationships": [], "objectives": objectives,
              "misconception_suggestions": [], "activities": [],
              "structure": {"has_structure": False, "title": doc["title"],
-                           "section_count": 0}}
+                           "section_count": 0, "page_count": 0,
+                           "candidate_count": 0, "strong_count": 0, "notes": []}}
     if not any(sec["sentences"] or sec["bullets"] or sec["examples"] for sec in doc["sections"]):
+        empty["structure"]["notes"] = [
+            "No explanatory text could be found in this material, so no concepts were "
+            "suggested. Paste the lecture notes or add a short explanation per topic."
+        ]
         return empty
 
+    effective_objectives = objectives or doc["objectives"]
     if doc["has_structure"]:
-        concepts = _concepts_from_sections(doc, max_concepts)
+        concepts = _concepts_from_sections(doc, effective_objectives, max_concepts)
         # structure gave nothing usable (e.g. headings without content) ->
         # fall back to prose mining
         if not concepts:
             concepts = _concepts_from_prose(doc, title or (doc["title"] or ""),
-                                            objectives or doc["objectives"], max_concepts)
+                                            effective_objectives, max_concepts)
     else:
         concepts = _concepts_from_prose(doc, title or (doc["title"] or ""),
-                                        objectives or doc["objectives"], max_concepts)
+                                        effective_objectives, max_concepts)
 
     for c in concepts:
         c.update(_questions_for(c["name"], c["description"], c["facts"], c["examples"]))
@@ -530,6 +1005,20 @@ def prepare_lecture(material: str, title: str = "", description: str = "",
 
     activities = _suggested_activities(title or doc["title"] or "", concepts, relationships)
 
+    # honest reporting: how much of this draft is actually well supported?
+    strong = [c for c in concepts if c.get("confidence") == "strong"]
+    weak = [c for c in concepts if c.get("confidence") == "weak"]
+    notes = []
+    if not concepts:
+        notes.append("No concept in this material had enough explanatory support to suggest. "
+                     "Add a sentence or two explaining each idea, or enter the concepts yourself.")
+    elif len(strong) < len(concepts):
+        notes.append(
+            f"{len(strong)} of {len(concepts)} suggested concepts have strong supporting evidence."
+        )
+    if weak:
+        notes.append(f"{len(weak)} suggestion(s) rest on weak evidence — review them before publishing.")
+
     return {
         "concepts": concepts,
         "relationships": relationships,
@@ -537,5 +1026,10 @@ def prepare_lecture(material: str, title: str = "", description: str = "",
         "misconception_suggestions": miscon_suggestions,
         "activities": activities,
         "structure": {"has_structure": doc["has_structure"], "title": doc["title"],
-                      "section_count": len(doc["sections"])},
+                      "section_count": len(doc["sections"]),
+                      "page_count": len({sec.get("page") for sec in doc["sections"]
+                                         if sec.get("page")}),
+                      "candidate_count": len(doc["sections"]),
+                      "strong_count": len(strong),
+                      "notes": notes},
     }

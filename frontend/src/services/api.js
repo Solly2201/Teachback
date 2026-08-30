@@ -25,8 +25,17 @@ export const api = {
   topics: (subjectId) => request(`/topics${subjectId ? `?subject_id=${subjectId}` : ''}`),
   topic: (id) => request(`/topics/${id}`),
   teachers: () => request('/teachers'),
-  lectures: (subjectId) => request(`/lectures${subjectId ? `?subject_id=${subjectId}` : ''}`),
+  lectures: (subjectId, includeArchived = false) => {
+    const params = new URLSearchParams()
+    if (subjectId) params.set('subject_id', subjectId)
+    if (includeArchived) params.set('include_archived', 'true')
+    const query = params.toString()
+    return request(`/lectures${query ? `?${query}` : ''}`)
+  },
   lecture: (id) => request(`/lectures/${id}`),
+  deletePreview: (id) => request(`/lectures/${id}/delete-preview`),
+  deleteLecture: (id) => request(`/lectures/${id}`, { method: 'DELETE' }),
+  restoreLecture: (id) => request(`/lectures/${id}/restore`, { method: 'POST' }),
   createLecture: (data) => request('/lectures', { method: 'POST', body: JSON.stringify(data) }),
   updateLecture: (id, data) => request(`/lectures/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   publishLecture: (id) => request(`/lectures/${id}/publish`, { method: 'POST' }),
@@ -69,3 +78,28 @@ export const STATE_DESCRIPTIONS = {
   'Understanding': 'The concepts are coming together — time to apply them.',
   'Confident': 'Consistently accurate explanations — ready for advanced challenges.',
 }
+
+/* Student-facing wording for the same five states. The internal model is
+   unchanged and faculty views keep the formal names, but a student is never
+   told something the system cannot observe: TeachBack sees answers and
+   self-reports, never intent. "Not Trying" therefore becomes a statement
+   about the evidence, not about the person. */
+export const STATE_STUDENT_LABELS = {
+  'Not Trying': 'Very little evidence yet',
+  'Unclear': 'Still unclear',
+  'Struggling but Trying': 'Working through it',
+  'Understanding': 'Understanding',
+  'Confident': 'Confident',
+}
+
+export const STATE_STUDENT_DESCRIPTIONS = {
+  'Not Trying': "Your recent sessions didn't give us much to go on yet — one short answer is enough to change that.",
+  'Unclear': "The core ideas haven't settled yet — a simpler explanation will help more than practice right now.",
+  'Struggling but Trying': "You're putting in real effort and some parts are still coming together — guided practice fits best here.",
+  'Understanding': 'The concepts are coming together — the next step is applying them.',
+  'Confident': "You've explained these ideas clearly across recent sessions — ready for an optional challenge.",
+}
+
+export const studentStateLabel = (label) => STATE_STUDENT_LABELS[label] || label
+export const studentStateDescription = (label) =>
+  STATE_STUDENT_DESCRIPTIONS[label] || STATE_DESCRIPTIONS[label] || ''

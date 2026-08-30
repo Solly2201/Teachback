@@ -57,10 +57,16 @@ class TopicIn(BaseModel):
 
 
 @router.get("")
-def list_topics(subject_id: int | None = None, db: Session = Depends(get_db)):
+def list_topics(subject_id: int | None = None, include_archived: bool = False,
+                db: Session = Depends(get_db)):
+    """Active topics. A topic whose lecture was archived is hidden here (so no
+    new TeachBack can start on it) but is still fetchable by id, because old
+    sessions and progress records reference it."""
     q = db.query(Topic).order_by(Topic.id)
     if subject_id is not None:
         q = q.filter(Topic.subject_id == subject_id)
+    if not include_archived:
+        q = q.filter(Topic.archived_at.is_(None))
     topics = q.all()
     return [
         {
@@ -73,6 +79,7 @@ def list_topics(subject_id: int | None = None, db: Session = Depends(get_db)):
             "relationship_count": len(t.relationships),
             "misconception_count": len(t.misconceptions),
             "activity_count": len(t.activities),
+            "archived": t.archived_at is not None,
         }
         for t in topics
     ]

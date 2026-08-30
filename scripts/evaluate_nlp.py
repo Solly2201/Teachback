@@ -172,8 +172,15 @@ def evaluate(items: list[dict], topic_defs: dict, verbose: bool = True) -> dict:
 
 
 def evaluate_relationships(rel_items: list[dict], topic_defs: dict) -> dict:
+    """Three expectations, matching the three things a relationship can mean.
+
+    demonstrated - the answer establishes the teacher's connection
+    contradicted - the answer states the connection the wrong way round
+    not_shown    - the answer says nothing either way about this connection
+    """
     ok = 0
     errors = []
+    by_expectation: dict[str, list[int]] = {}
     for item in rel_items:
         tdef = topic_defs[item["topic"]]
         analysis = analyze_response(item["text"], tdef)
@@ -181,18 +188,30 @@ def evaluate_relationships(rel_items: list[dict], topic_defs: dict) -> dict:
         res = next((r for r in analysis["relationships"]
                     if r["source"] == src and r["target"] == tgt), None)
         status = res["status"] if res else "missing_definition"
-        if item["expected"] == "demonstrated":
+        expected = item["expected"]
+        if expected == "demonstrated":
             good = status == "demonstrated"
-        else:  # contradicted: must not be demonstrated; contradicted preferred
-            good = status in ("contradicted", "not_shown") and status != "demonstrated"
+        elif expected == "not_shown":
+            # false-positive guard: the answer says nothing either way about
+            # this connection, and inventing one is worse than missing one
+            good = status == "not_shown"
+        else:  # contradicted: must at minimum not be accepted as demonstrated
+            good = status in ("contradicted", "not_shown")
+        bucket = by_expectation.setdefault(expected, [0, 0])
+        bucket[1] += 1
         if good:
             ok += 1
+            bucket[0] += 1
         else:
-            errors.append({"text": item["text"], "expected": item["expected"], "got": status})
+            errors.append({"text": item["text"], "expected": expected, "got": status})
     print(f"\nRelationship checks: {ok}/{len(rel_items)} as expected")
+    for expectation, (hit, total) in sorted(by_expectation.items()):
+        print(f"  {expectation:14} {hit}/{total}")
     for e in errors:
         print(f"  expected {e['expected']}, got {e['got']}: {e['text'][:60]}")
-    return {"n": len(rel_items), "ok": ok, "errors": errors}
+    return {"n": len(rel_items), "ok": ok,
+            "by_expectation": {k: {"ok": v[0], "n": v[1]} for k, v in by_expectation.items()},
+            "errors": errors}
 
 
 def tune(items: list[dict], topic_defs: dict):
