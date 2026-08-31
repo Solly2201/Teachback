@@ -19,6 +19,8 @@ optional extension question when everything went well), or at MAX_QUESTIONS.
 """
 import re
 
+from .analyzer import NAME_ONLY_LIFT
+
 # Targeted thresholds are a little more permissive than the analyzer's global
 # ones: the question already establishes the context, so a short on-point
 # answer ("It tells us how the loss changes") should count. Neither score is
@@ -190,6 +192,16 @@ def _similarity_for(analysis: dict, entry: dict) -> float:
     return 0.0
 
 
+def _lifted(tc: dict, key: str) -> bool:
+    """True when the answer moved this score above the floor it starts from.
+
+    A caller that does not report the floor gets the benefit of the doubt, so
+    that older/partial target-check payloads behave exactly as before.
+    """
+    lift = tc.get(key)
+    return lift is None or lift > NAME_ONLY_LIFT
+
+
 def _verdict(analysis: dict, entry: dict, confirm_context: bool = False) -> str:
     """Judge the answer against the concept currently being asked about.
 
@@ -235,7 +247,16 @@ def _verdict(analysis: dict, entry: dict, confirm_context: bool = False) -> str:
     # itself is not full credit, even when the misconception detector did not
     # meet its (deliberately strict) bar for naming it
     ceiling_partial = bool(tc.get("shadowed"))
-    if (plain >= TARGET_COVERED_T or ctx >= CTX_COVERED_T) and not ceiling_partial:
+    # Reaching the bar is not the same as earning it. Each score has a floor
+    # the answer never has to clear — the concept's own name accounts for most
+    # of it (analyzer.NAME_ONLY_LIFT) — and for a self-describing concept like
+    # "Hidden states" that floor is already above the credit bar, so silence
+    # scores as well as an explanation. Full credit therefore goes to the
+    # score that the ANSWER lifted above its floor. Scores whose floor is not
+    # reported (older callers) keep the previous behaviour.
+    earned_plain = plain >= TARGET_COVERED_T and _lifted(tc, "plain_lift")
+    earned_ctx = ctx >= CTX_COVERED_T and _lifted(tc, "contextual_lift")
+    if (earned_plain or earned_ctx) and not ceiling_partial:
         return "correct"
     if plain >= TARGET_PARTIAL_T or ctx >= CTX_PARTIAL_T:
         return "partial"

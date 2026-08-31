@@ -259,3 +259,38 @@ def test_knowledge_check_stats_scoped_by_subject():
     strings_stats = next((k for k in py["knowledge_checks"] if "Strings" in k["name"]), None)
     assert strings_stats is not None and strings_stats["attempts"] >= 1
     assert all("mcq_percent" in c and "teachback_percent" in c for c in strings_stats["concepts"])
+
+
+# ---------------------------------------------------------------- positions
+
+def test_correct_answer_position_is_not_a_predictable_cycle():
+    """Rotating by the question's index produced A, B, C, D, A, B ... in every
+    quiz — a student who spotted it could score full marks without reading.
+    The rotation now comes from the question's own text."""
+    positions = [q["correct_index"] for q in generate_quiz_questions(STRINGS_DEF)]
+    cycle = [i % 4 for i in range(len(positions))]
+    assert positions != cycle, "the correct answer follows its position in the quiz"
+    assert len(set(positions)) >= 3, positions
+
+
+def test_position_rotation_is_stable_across_topics_and_runs():
+    """Content-derived, so the same material always produces the same quiz —
+    but different material does not share a pattern."""
+    for tdef in (STRINGS_DEF, *TOPICS):
+        first = [q["correct_index"] for q in generate_quiz_questions(tdef)]
+        assert first == [q["correct_index"] for q in generate_quiz_questions(tdef)]
+        assert first != [i % 4 for i in range(len(first))], tdef["name"]
+
+
+def test_every_seeded_topic_produces_a_full_valid_quiz():
+    for tdef in (STRINGS_DEF, *TOPICS):
+        qs = generate_quiz_questions(tdef)
+        assert len(qs) == 10, f"{tdef['name']}: {len(qs)}"
+        assert all(validate_question(q) for q in qs)
+        stems = [q["question"].strip().lower() for q in qs]
+        assert len(stems) == len(set(stems)), f"duplicate stem in {tdef['name']}"
+        for q in qs:
+            assert len({o.strip().lower() for o in q["options"]}) == 4
+            # the correct option must not stand out by length alone
+            others = [len(o) for i, o in enumerate(q["options"]) if i != q["correct_index"]]
+            assert len(q["options"][q["correct_index"]]) <= 2.5 * max(others)

@@ -241,6 +241,52 @@ Measured effect (no thresholds touched), on the labelled set's held-out
 portion: evidence accuracy 0.782 → 0.862, misconception precision unchanged at
 1.000, relationship checks unchanged at 18/20.
 
+#### A score has to be earned, not started with (`NAME_ONLY_LIFT`)
+
+The lexical rule above stops an answer being credited for *naming* a concept,
+but it cannot see the second half of the same problem: because the concept's
+name is repeated inside every reference text, both similarity scores start
+well above zero **before the student has said anything at all**.
+
+| concept | score for an empty answer | credit bar |
+|---|---|---|
+| Hidden states | 0.82 | 0.62 |
+| Slicing | 0.76 | 0.62 |
+| Markov property | 0.76 | 0.62 |
+| Weight update | 0.54 | 0.62 |
+
+For the self-describing concepts that floor is already *past* the bar, so an
+absolute threshold means a different thing for every concept, and for some of
+them silence scores as well as an explanation. The adversarial audit below
+found this being paid out as real credit: *"umm well you know how it is"* and
+*"is this going to be in the test"* were both reported to the student as a
+demonstrated concept.
+
+Each score is now measured against **its own floor** — the identical
+measurement with the answer removed — and full credit goes to the score the
+*answer* lifted above it. This is a correction to the measurement, not a
+change of threshold: every bar in `conversation.py` is untouched, and the
+required lift was swept over 0.00–0.10 on the calibration split and left at a
+bare "must beat its floor", because a wider margin bought nothing the floor
+had not already bought and cost real answers.
+
+Two smaller fixes came from the same audit:
+
+- **Polarity, where similarity cannot help.** *"The next state depends on
+  everything that happened before it"* is the Markov property inverted, and it
+  shares nearly every word with the teacher's own sentence — so the embedding
+  puts it **closer to the concept (0.91) than to the taught misconception it
+  restates (0.80)**. No similarity rule can separate those. A concept defined
+  by an exclusion ("depends *only* on…, *not* on…") therefore reads an answer
+  asserting the totality it rules out as a ceiling on credit. It is
+  deliberately narrow — quantifying words like "each" are excluded, so *"each
+  state emits an observation"* does not trip it — and it only ever *withholds*
+  credit; it never names a misconception.
+- **The per-question check now gets the lecture's other concept names**, which
+  the whole-response analysis always had. Without them, a bare list of the
+  topic's own headings ("gradient descent backpropagation loss weights")
+  counted as an explanation of whichever concept was under discussion.
+
 ### Guided conversation (`nlp/conversation.py`)
 
 A deterministic rule engine — not a language model — walks through the concepts one **short
@@ -676,24 +722,32 @@ Frontend: React 18, Vite, Tailwind. Storage: SQLite. **No LLM APIs anywhere.**
 real per-turn pipeline (analysis + targeted check + verdict) and reports per-label
 precision/recall/F1, a 4×4 confusion matrix, and per-category accuracy (simple language,
 paraphrases, short answers, analogies, noise, …). The dataset is split deterministically into a
-**calibration portion (132 items — thresholds tuned only on these)** and a **held-out portion
-(66 items — never used for tuning)**:
+**calibration portion (174 items — thresholds tuned only on these)** and a **held-out portion
+(87 items — never used for tuning)**:
 
-| | Calibration (132) | Held-out (66) |
+| | Calibration (174) | Held-out (87) |
 |---|---|---|
-| Strict label accuracy | 0.63 | 0.62 |
-| Evidence-level accuracy | 0.85 | 0.79 |
+| Strict label accuracy | 0.64 | 0.62 |
+| Evidence-level accuracy | 0.86 | 0.84 |
 | Misconception precision | **1.00** | **1.00** |
-| Misconception recall | 0.50 | 0.75 |
-| Strong-evidence F1 | 0.67 | 0.76 |
+| Misconception recall | 0.55 | 0.57 |
+| Strong-evidence precision / recall | 0.78 / 0.67 | 0.83 / 0.64 |
 
 ("Evidence-level" counts strong↔partial confusion as acceptable — both mean "the student
-showed understanding".) The held-out portion is small (~66 items), so its numbers are a
+showed understanding".) The held-out portion is small (87 items), so its numbers are a
 sanity check rather than precise statistics — but they are consistent with calibration,
 suggesting the thresholds are not badly overfit. Misconception *precision* is deliberately
 prioritised over recall: the system must never accuse a correct answer of being a
 misconception; missed paraphrased misconceptions fall through to the normal probe flow
-instead. All 9 relationship checks (demonstrated vs. reversed) behave as expected.
+instead. 18 of 20 relationship checks behave as expected.
+
+**These numbers moved in both directions in the final pass, and the trade was deliberate.**
+Fixing the similarity floor (`NAME_ONLY_LIFT`, above) raised strong-evidence *precision*
+(0.72 → 0.78 calibration, 0.77 → 0.83 held-out) and cut the adversarial audit's false-credit
+rate from 0.317 to 0.067; it cost strong-evidence *recall* (0.80 → 0.67, 0.73 → 0.64) and
+about a point of overall accuracy on this set. The labelled set is dominated by cooperative
+answers, so it under-weights exactly the failure the fix targets. Telling a student they have
+demonstrated something they have not is the more damaging error, so it was taken.
 
 **Legacy NLP feature evaluation** — `scripts/build_all.py` additionally scores concept /
 misconception detection on `data/nlp_eval/` and stores results in
@@ -724,21 +778,83 @@ verdict — and is **never used to tune anything**.
 
 Current result (seed 20260831, `data/nlp/student_simulation.json`):
 
-| measure | value |
-|---|---|
-| strict / evidence accuracy | 0.641 / 0.753 |
-| demonstrated precision / recall | 0.787 / 0.686 |
-| false credit on answers carrying no evidence | 0.133 |
-| ...on "I don't know" | 0.000 |
-| ...on unrelated answers | 0.000 |
-| correct answers in simple/terminology-free wording missed | 0.246 |
-| takeaways: never downgraded / no fabrication from a term list | yes / yes |
+| measure | before the final pass | after |
+|---|---|---|
+| strict / evidence accuracy | 0.641 / 0.753 | 0.529 / **0.759** |
+| demonstrated precision / recall | 0.787 / 0.686 | **0.792** / 0.442 |
+| false credit on answers carrying no evidence | 0.133 | **0.044** |
+| ...on "I don't know" | 0.000 | 0.000 |
+| ...on unrelated answers | 0.000 | 0.000 |
+| correct answers in simple/terminology-free wording missed | 0.246 | 0.246 |
+| relationship probes as expected | 6/12 | 6/12 |
+| takeaways: never downgraded / no fabrication from a term list | yes / yes | yes / yes |
 
-The 10 sessions discriminate as they should: the concise, informal,
-different-terminology and relationship-fluent students demonstrate all six
-concepts; the uncertain and vague students demonstrate three; the
-overconfident-but-wrong and genuinely-struggling students demonstrate one. All
-stay inside the 12-question cap.
+**Read the two accuracy figures together.** *Evidence-level* accuracy (which
+treats "demonstrated" and "partly shown" as the same answer to the question
+*did this student show understanding?*) went slightly **up**. *Strict*
+accuracy went down because the split between those two moved: after the
+similarity-floor fix, a correct answer far from the teacher's wording is more
+often credited on the **follow-up** question rather than on the first one.
+The student is not told they are wrong — they get one more question — but the
+concept is no longer settled in a single turn, which is what the recall figure
+is measuring.
+
+The 10 sessions still discriminate as they should, one step more
+conservatively than before: the concise, informal, example-driven and
+misconception-correcting students demonstrate **five** of six concepts (six
+before the fix); the uncertain, vague and different-terminology students
+demonstrate three; the overconfident-but-wrong and genuinely-struggling
+students demonstrate one. All stay inside the 12-question cap.
+
+Disabling the floor fix and re-running the adversarial audit isolates what it
+buys: false credit **0.108 → 0.067**, and 11 further answers stop being
+reported as demonstrated — among them *"is this going to be in the test"* and
+*"the architecture leverages an end-to-end differentiable paradigm"*. That is
+the trade, measured in both directions and taken deliberately.
+
+### Adversarial audit (`scripts/adversarial_audit.py`)
+
+`student_audit.py` asks whether ordinary student wording is *recognised*. This
+asks the opposite question — where does the system produce a **dangerous**
+output? Two failures matter far more than accuracy:
+
+- **False credit** — an answer with no understanding in it is reported as
+  demonstrated. The student is told they know something they do not.
+- **False accusation** — a correct or merely absent answer is named as a
+  misconception, or turned into a remediation task. The student is corrected
+  for something they did not do.
+
+The full report, including the category breakdown and every bug it found, is in
+[EVALUATION.md](EVALUATION.md).
+
+151 fixed cases (139 answers + 12 relationship probes) across **four topics**,
+run through the real pipeline, covering the eight families the brief calls for:
+clearly correct (textbook, paraphrase, informal, colloquial, very short, long,
+own terminology, analogy, example, correct-plus-irrelevant), partially correct,
+incorrect-but-not-taught, taught misconceptions, no-evidence, uncertainty,
+natural language variation (spelling, no punctuation, slang, Indian-English,
+terse, rambling), and adversarial (concept name only, right words with wrong
+meaning, negation, misconception followed by its own correction, mixed
+right-and-wrong claims). **Nothing in it is ever used to tune a threshold.**
+
+| measure | before this pass | after |
+|---|---|---|
+| false credit (no-evidence or wrong answer reported as demonstrated) | 0.317 | **0.067** |
+| false accusation (misconception named where none was made) | 0.000 | **0.000** |
+| correct answers recognised | 0.949 | 0.949 |
+| misconception precision / recall | 1.000 / 0.636 | 1.000 / 0.636 |
+| taught misconceptions handed full credit | 1 | **0** |
+| "I don't know" / blank / question-echo given credit | 0 | 0 |
+| silence reported as a misunderstood relationship | 0 | 0 |
+| safety invariants passed | 7/7 | 7/7 |
+
+The four residual false credits are all the same shape: an answer that uses
+the right vocabulary about the right topic while asserting something false
+("characters are the variables that hold a string", "regularization increases
+the size of the weights"). Sentence embeddings score those as near-identical
+to the correct account, and no deterministic rule in this codebase separates
+them — see *Known limitations*. Overall agreement with the expected outcome
+rose from 0.77 to 0.856 across the same 139 answers.
 
 ## 18. Known limitations
 
@@ -750,6 +866,19 @@ happening in a student's mind.
   far from the stored descriptions can be missed, and thresholds were tuned on the same small
   labelled set they are evaluated on.
 - Semantic correctness saturates for fluent on-topic text even when partially wrong.
+- **A confidently wrong answer built from the right vocabulary can still be credited.**
+  This is the largest remaining hole, and the adversarial audit measures it rather than
+  hiding it (0.067 false credit, all four cases of this shape). *"Characters are the
+  variables that hold a string"* scores as well against the Characters reference texts as
+  many correct paraphrases do, because it is about characters, about strings and about
+  holding text; only the claim is false. Sentence embeddings measure aboutness, not truth,
+  and the two guards that do catch a false claim both need something to compare against:
+  a teacher-authored misconception, or an explicit polarity marker in the concept's own
+  description. An arbitrary false statement in fluent topic vocabulary has neither.
+  Closing this properly needs entailment checking, which means a model TeachBack
+  deliberately does not have. The practical mitigations are the ones already in place:
+  teachers author the misconceptions they actually see, and the conversation asks a
+  follow-up rather than settling the concept on one answer.
 - The HMM is trained **and evaluated on synthetic trajectories**; its high accuracy reflects
   recovery of the generating process, not validated performance on real students.
 - Relationship contradiction detection relies on cue words from the teacher-authored wrong

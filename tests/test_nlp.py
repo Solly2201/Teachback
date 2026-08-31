@@ -1,6 +1,5 @@
-"""Tests for the NLP analyzer and the rule-based dialogue engine."""
+"""Tests for the NLP analyzer and the rule-based conversation engine."""
 from app.nlp.analyzer import analyze_response, merge_session_analyses, split_sentences
-from app.nlp.dialogue import select_followup
 from app.seed_content import TOPICS
 
 BACKPROP = next(t for t in TOPICS if t["name"] == "Backpropagation")
@@ -42,35 +41,6 @@ def test_low_effort_features():
     analysis = analyze_response("idk", BACKPROP)
     assert analysis["features"]["response_effort"] < 0.1
     assert analysis["features"]["concept_coverage"] <= 0.2
-
-
-def test_dialogue_reengages_on_short_answer():
-    analysis = analyze_response("idk", BACKPROP)
-    followup = select_followup(analysis, BACKPROP)
-    assert followup["kind"] == "re_engage"
-
-
-def test_dialogue_probes_misconception_first():
-    analysis = analyze_response(MISCONCEPTION_ANSWER, BACKPROP)
-    followup = select_followup(analysis, BACKPROP)
-    assert followup["kind"] == "misconception_probe"
-    assert followup["target"] == "Backpropagation changes the input"
-
-
-def test_dialogue_probes_missing_concept():
-    analysis = analyze_response(
-        "A loss function measures how wrong the network's prediction is compared to the true answer. "
-        "That error value is what training tries to reduce over time.",
-        BACKPROP,
-    )
-    followup = select_followup(analysis, BACKPROP)
-    assert followup["kind"] == "concept_probe"
-
-
-def test_dialogue_extension_when_all_covered():
-    analysis = analyze_response(GOOD_ANSWER, BACKPROP)
-    followup = select_followup(analysis, BACKPROP)
-    assert followup["kind"] in ("extension", "concept_probe")
 
 
 def test_targeted_check_accepts_short_contextual_answer():

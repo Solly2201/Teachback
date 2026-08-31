@@ -2,7 +2,7 @@
 
 Each topic bounds what the NLP component evaluates: required concepts (with
 descriptions the embeddings compare against), known misconceptions (the wrong
-claim + the correct contrast), probe questions for the dialogue engine, and
+claim + the correct contrast), probe questions for the conversation engine, and
 one activity per learning state for the recommender.
 """
 

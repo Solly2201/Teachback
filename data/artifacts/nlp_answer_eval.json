@@ -1,25 +1,25 @@
 {
   "calibration": {
     "n_items": 174,
-    "strict_accuracy": 0.672,
-    "evidence_accuracy": 0.862,
+    "strict_accuracy": 0.644,
+    "evidence_accuracy": 0.856,
     "per_label": {
       "strong": {
-        "precision": 0.724,
-        "recall": 0.797,
-        "f1": 0.759,
+        "precision": 0.779,
+        "recall": 0.671,
+        "f1": 0.721,
         "support": 79
       },
       "partial": {
-        "precision": 0.323,
-        "recall": 0.256,
-        "f1": 0.286,
+        "precision": 0.306,
+        "recall": 0.385,
+        "f1": 0.341,
         "support": 39
       },
       "unclear": {
-        "precision": 0.76,
+        "precision": 0.745,
         "recall": 0.844,
-        "f1": 0.8,
+        "f1": 0.792,
         "support": 45
       },
       "misconception": {
@@ -37,26 +37,26 @@
     ],
     "confusion_matrix": [
       [
-        63,
-        13,
+        53,
+        23,
         3,
         0
       ],
       [
-        20,
+        14,
+        15,
         10,
-        9,
         0
       ],
       [
-        2,
-        5,
+        0,
+        7,
         38,
         0
       ],
       [
-        2,
-        3,
+        1,
+        4,
         0,
         6
       ]
@@ -91,7 +91,7 @@
         "n": 3
       },
       "informal": {
-        "accuracy": 0.909,
+        "accuracy": 0.818,
         "n": 11
       },
       "irrelevant": {
@@ -150,25 +150,25 @@
   },
   "heldout": {
     "n_items": 87,
-    "strict_accuracy": 0.644,
-    "evidence_accuracy": 0.862,
+    "strict_accuracy": 0.621,
+    "evidence_accuracy": 0.839,
     "per_label": {
       "strong": {
-        "precision": 0.767,
-        "recall": 0.733,
-        "f1": 0.75,
+        "precision": 0.829,
+        "recall": 0.644,
+        "f1": 0.725,
         "support": 45
       },
       "partial": {
-        "precision": 0.222,
-        "recall": 0.222,
-        "f1": 0.222,
+        "precision": 0.25,
+        "recall": 0.333,
+        "f1": 0.286,
         "support": 18
       },
       "unclear": {
-        "precision": 0.682,
+        "precision": 0.625,
         "recall": 0.882,
-        "f1": 0.769,
+        "f1": 0.732,
         "support": 17
       },
       "misconception": {
@@ -186,15 +186,15 @@
     ],
     "confusion_matrix": [
       [
-        33,
-        9,
+        29,
+        13,
         3,
         0
       ],
       [
-        10,
-        4,
-        4,
+        6,
+        6,
+        6,
         0
       ],
       [
@@ -240,7 +240,7 @@
         "n": 1
       },
       "informal": {
-        "accuracy": 0.875,
+        "accuracy": 0.75,
         "n": 8
       },
       "irrelevant": {
@@ -260,7 +260,7 @@
         "n": 11
       },
       "partial_fact": {
-        "accuracy": 1.0,
+        "accuracy": 0.8,
         "n": 5
       },
       "pdf_artifact": {
@@ -296,6 +296,20 @@
       "text": "It's like a box.",
       "truth": "unclear",
       "pred": "partial"
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "it tells you where the character is",
+      "truth": "partial",
+      "pred": "unclear"
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "Indexing gets a character.",
+      "truth": "partial",
+      "pred": "unclear"
     },
     {
       "topic": "strings",

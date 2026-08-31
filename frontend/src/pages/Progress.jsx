@@ -68,8 +68,8 @@ export default function Progress({ user }) {
           </div>
         </div>
         <div className="px-4 pb-4 text-xs text-charcoal-light border-t border-zinc-100 pt-3">
-          The bullets are the evidence from each session (concept coverage, accuracy, effort, misconceptions) —
-          the HMM turns that sequence of evidence into your learning state.
+          Each bullet is what one session actually showed. Your learning condition is read from
+          the whole run of sessions together, not from any single one.
         </div>
       </div>
 

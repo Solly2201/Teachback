@@ -22,6 +22,7 @@ other examples' results, the teacher's wrong claims), so they are plausible
 without requiring outside knowledge. Selection is rotation-based (indexing,
 not random) so generation is reproducible.
 """
+import hashlib
 import re
 
 QUIZ_SIZE = 10
@@ -250,10 +251,19 @@ def _closest_concept_name(miscon: dict, concepts: list[dict]) -> str | None:
 
 
 def _spread_correct_index(questions: list[dict]) -> list[dict]:
-    """Rotate each question's options so the correct answer isn't always A."""
+    """Rotate each question's options so the correct answer isn't always A.
+
+    The rotation is derived from the question's own text, not from its position
+    in the quiz. Rotating by the index produced a perfectly predictable
+    A, B, C, D, A, B ... cycle in every generated quiz — a student who noticed
+    it could score full marks without reading a single question. Hashing the
+    stem keeps generation reproducible (the same material always yields the
+    same quiz) while removing the pattern.
+    """
     out = []
-    for i, q in enumerate(questions):
-        shift = i % 4
+    for q in questions:
+        digest = hashlib.sha1(q["question"].strip().lower().encode("utf-8")).digest()
+        shift = digest[0] % 4
         options = q["options"][-shift:] + q["options"][:-shift] if shift else list(q["options"])
         out.append({**q, "options": options,
                     "correct_index": (q["correct_index"] + shift) % 4})

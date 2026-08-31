@@ -52,7 +52,7 @@ def relationship_summary(plan: dict | None) -> list[dict]:
 
 
 def topic_def(topic: Topic) -> dict:
-    """Structured topic definition consumed by the NLP analyzer and dialogue engine."""
+    """Structured topic definition consumed by the NLP analyzer and conversation engine."""
     return {
         "id": topic.id,
         "name": topic.name,

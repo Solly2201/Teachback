@@ -416,7 +416,8 @@ def judge(case: dict, tdef: dict) -> tuple[str, dict]:
     concept = next(c for c in tdef["concepts"] if c["name"] == case["concept"])
     analysis["target_check"] = targeted_concept_check(
         case["text"], concept, topic_name=tdef.get("name", ""),
-        misconceptions=tdef.get("misconceptions"))
+        misconceptions=tdef.get("misconceptions"),
+        sibling_names=[c["name"] for c in tdef["concepts"]])
     entry = {"id": concept.get("id"), "name": concept["name"],
              "status": "pending", "attempts": 0}
     verdict = conversation._verdict(analysis, entry)

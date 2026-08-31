@@ -229,6 +229,16 @@ const FEEDBACK_CHIPS = ['More examples', 'Slower explanation', 'Faster pace', 'M
   'More visuals', 'More real-world examples', 'More time for questions', 'Less repetition',
   'More challenging material']
 
+/* How settled the learning-condition reading is, in words rather than numbers.
+   Students get the confidence, not the classifier. */
+function settledness(posterior) {
+  const values = Object.values(posterior || {})
+  const top = values.length ? Math.max(...values) : 0
+  if (top >= 0.8) return 'This reading is a settled one — your recent sessions point the same way.'
+  if (top >= 0.5) return 'This reading is a fairly confident one, based on your recent sessions.'
+  return 'This reading is tentative — a session or two more will make it clearer.'
+}
+
 export default function TeachBack({ user }) {
   const [topics, setTopics] = useState(null)
   const [session, setSession] = useState(null)
@@ -442,17 +452,24 @@ export default function TeachBack({ user }) {
                 </ul>
               </div>
             )}
+            {/* The five-state distribution is classifier output. A student is
+                told in words how settled the reading is; the breakdown stays
+                available but folded away, and is never presented as a
+                probability that they understand the topic. */}
             <div className="mt-4 pt-4 border-t border-zinc-100">
-              <div className="text-xs font-semibold text-charcoal-light uppercase tracking-wide mb-1">
-                Model confidence in the current learning condition
-              </div>
-              <p className="text-xs text-charcoal-light mb-2">
-                {result.state.posterior_meaning ||
-                  'How well each learning condition explains your session history — not a probability that you understand the topic.'}
-              </p>
-              {Object.entries(result.state.posterior).map(([name, p]) => (
-                <Meter key={name} label={studentStateLabel(name)} value={p} color={name === result.state.label ? '#A5231B' : '#A1A1AA'} />
-              ))}
+              <p className="text-sm text-charcoal-light">{settledness(result.state.posterior)}</p>
+              <details className="mt-2">
+                <summary className="text-xs text-charcoal-light cursor-pointer hover:text-brand">
+                  How this reading was made
+                </summary>
+                <p className="text-xs text-charcoal-light mt-2 mb-2">
+                  {result.state.posterior_meaning ||
+                    'How well each learning condition explains your run of sessions — not a probability that you understand the topic.'}
+                </p>
+                {Object.entries(result.state.posterior).map(([name, p]) => (
+                  <Meter key={name} label={studentStateLabel(name)} value={p} color={name === result.state.label ? '#A5231B' : '#A1A1AA'} />
+                ))}
+              </details>
             </div>
           </div>
         </div>

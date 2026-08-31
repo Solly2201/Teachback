@@ -51,6 +51,25 @@ MISCONCEPTION_MARGIN = 0.08  # must beat similarity to the correction by this
 # the student of holding that misconception. Full credit is withheld in that
 # case — "not enough evidence yet", never "you are wrong".
 MISCONCEPTION_SHADOW = 0.10
+# Both similarity scores have a floor that the answer never has to earn.
+# "Hidden states: <nothing>" already scores 0.82 against the Hidden states
+# reference texts, purely on the repeated name; the bare word "Overfitting"
+# scores 0.72 against the Overfitting ones. Those floors vary from ~0.54 to
+# ~0.82 depending on how self-descriptive the concept's name is, so an
+# absolute threshold means something different for every concept, and for the
+# self-naming ones it is cleared by saying nothing at all.
+#
+# Each score is therefore compared against its OWN floor: the same measurement
+# with the answer removed. What is left is what the answer contributed. This
+# is a correction to the measurement, not a change of threshold — the bars
+# below are untouched.
+# Swept over 0.00-0.10 on the calibration split of data/nlp/labeled_answers.json
+# (the same procedure that fixed the conversation thresholds). Evidence accuracy
+# was flat at 0.856 across the whole range while strict accuracy fell from 0.644
+# to 0.598, and no unclear/misconception answer received credit at any value.
+# A bare "must beat its own floor" is therefore what is used: the margin bought
+# nothing the floor did not already buy, and cost real answers.
+NAME_ONLY_LIFT = 0.0  # credit requires beating the floor, not merely reaching it
 # How many informative words an answer must carry before a prefix-inflated
 # similarity is trusted on its own. One word is a fragment, not an
 # explanation — unless that word is one of the teacher's own key terms.
@@ -140,6 +159,7 @@ def _word_match(a: str, b: str) -> bool:
 # blacklist subject vocabulary.
 _VACUOUS_TERMS = {
     "bad", "good", "important", "useful", "useless", "interesting", "boring",
+    "fundamental", "essential", "key", "crucial", "basic",
     "confusing", "hard", "easy", "difficult", "nice", "great", "fine", "okay",
     "mentioned", "covered", "discussed", "taught", "exists", "exist",
     "matters", "matter", "involved", "related", "lecture", "class", "today",
@@ -154,6 +174,11 @@ _VACUOUS_TERMS = {
     # intensifiers and hedges
     "really", "very", "quite", "pretty", "actually", "essentially", "simply",
     "totally", "definitely", "probably", "obviously", "sort", "kind",
+    # filler and bare size/verdict words. "Overfitting is a big problem" and
+    # "umm well you know how it is" both cleared the two-informative-words bar
+    # on these alone, while saying nothing about any concept.
+    "umm", "uhh", "uh", "erm", "hmm", "huh", "basically", "big", "small",
+    "huge", "problem", "problems", "concept", "concepts",
 }
 
 
@@ -282,6 +307,38 @@ def negated_terms(sentence: str) -> list[str]:
             out += [t for t in tokens[i + 1 : i + 1 + NEGATION_WINDOW]
                     if t not in _STOPWORDS and len(t) > 2]
     return out
+
+
+# Some concepts are defined by what they EXCLUDE: "the next state depends only
+# on the current state, not on the whole earlier history". Flipping that
+# exclusion produces a sentence that shares nearly every content word with the
+# teacher's own wording, so the embedding puts it CLOSER to the concept than to
+# the taught misconception it actually restates (0.91 vs 0.80 for the Markov
+# property). No similarity rule can separate them; the difference is one word.
+#
+# So it is read lexically, and narrowly: an answer that asserts the totality
+# the concept explicitly narrows, while carrying neither the narrowing itself
+# nor a negation of its own, has inverted the concept. "Each state emits an
+# observation" must NOT trip this — "each" quantifies the states, not the
+# scope — which is why the marker set is restricted to totality words.
+#
+# This only ever withholds full credit. It never names a misconception and
+# never tells the student they are wrong.
+EXCLUSIVITY_MARKERS = {"only", "just", "solely", "alone", "merely", "purely"}
+TOTALITY_MARKERS = {"everything", "entire", "whole", "all", "always",
+                    "complete", "completely", "everywhere"}
+
+
+def inverts_exclusivity(description: str, text: str) -> bool:
+    """True when the answer asserts the totality the concept rules out."""
+    desc = set(content_words(description)) | set(
+        re.findall(r"[a-z]+", (description or "").lower()))
+    if not desc & EXCLUSIVITY_MARKERS:
+        return False
+    words = {t.replace("'", "") for t in
+             re.findall(r"[a-zA-Z][a-zA-Z\-']*", (text or "").lower())}
+    return bool(words & TOTALITY_MARKERS) and not (
+        words & EXCLUSIVITY_MARKERS) and not (words & _NEGATION_TOKENS)
 
 
 def analyze_response(text: str, topic_def: dict) -> dict:
@@ -638,16 +695,29 @@ def targeted_concept_check(text: str, concept: dict, topic_name: str = "",
     refs = [f"{name}: {concept.get('description', '')}"]
     refs += [f"{name}: {f}" for f in (concept.get("facts") or [])[:4]]
     refs += [f"{name}: {e}" for e in (concept.get("examples") or [])[:MAX_EXAMPLE_REFS]]
-    wrong = [m["description"] for m in (misconceptions or []) if m.get("description")]
-    emb = embed([text, f"{name}: {text}"] + refs + wrong)
+    # Prefixed the SAME way as the concept references above. Without this the
+    # comparison is rigged: the concept side gets a similarity boost from the
+    # shared "Name: " prefix that the wrong-claim side never sees, so an answer
+    # that restates a taught misconception almost verbatim still looks closer
+    # to the concept than to the misconception.
+    wrong = [f"{name}: {m['description']}" for m in (misconceptions or [])
+             if m.get("description")]
+    # The last two probes are the answer removed: the concept's name on its own
+    # (the floor for `plain`) and the bare context prefix (the floor for
+    # `contextual`). Both are embedded in the same batch, so this costs one
+    # encode call either way. See NAME_ONLY_LIFT.
+    emb = embed([text, f"{name}: {text}"] + refs + wrong + [name, f"{name}:"])
     ref_emb = emb[2:2 + len(refs)]
     plain = float(np.max(cosine_matrix(emb[0:1], ref_emb)))
     contextual = float(np.max(cosine_matrix(emb[1:2], ref_emb)))
+    plain_floor = float(np.max(cosine_matrix(emb[-2:-1], ref_emb)))
+    contextual_floor = float(np.max(cosine_matrix(emb[-1:], ref_emb)))
     # closer to a taught wrong claim than to the concept itself: withhold full
     # credit without accusing the student of anything (MISCONCEPTION_SHADOW)
     shadowed = False
     if wrong:
-        worst = float(np.max(cosine_matrix(emb[0:1], emb[2 + len(refs):])))
+        wrong_emb = emb[2 + len(refs):2 + len(refs) + len(wrong)]
+        worst = float(np.max(cosine_matrix(emb[0:1], wrong_emb)))
         shadowed = worst > plain + MISCONCEPTION_SHADOW
     # topic-title words ("Python", "Strings" for a lecture called "Strings in
     # Python") appear all over the reference texts without being evidence of
@@ -659,9 +729,15 @@ def targeted_concept_check(text: str, concept: dict, topic_name: str = "",
     # removed: an empty set means the student named it and stopped
     evidence = concept_evidence(text, concept, topic_name,
                                 sibling_names=sibling_names)
+    # the concept's own exclusion, asserted the other way round
+    inverted = inverts_exclusivity(concept.get("description", ""), text)
     return {"plain": round(plain, 3), "contextual": round(contextual, 3),
+            # how much of each score the answer itself accounts for
+            "plain_lift": round(plain - plain_floor, 3),
+            "contextual_lift": round(contextual - contextual_floor, 3),
             "overlap": overlap, "informative": bool(evidence["informative_terms"]),
-            "shadowed": shadowed, **evidence}
+            "shadowed": shadowed or inverted,
+            "inverts_exclusivity": inverted, **evidence}
 
 
 def merge_session_analyses(analyses: list[dict]) -> dict:
