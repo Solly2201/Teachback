@@ -111,7 +111,7 @@ def observation_evidence(o: Observation) -> list[str]:
         if f[4] >= 0.6:
             bullets.append("High effort")
         elif f[4] < 0.15:
-            bullets.append("Very low engagement")
+            bullets.append("Short answers — little to go on")
     for name in o.misconception_names or []:
         bullets.append(f"Misconception detected: {name}")
     return bullets

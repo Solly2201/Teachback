@@ -3,7 +3,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Activity, Concept, ConceptRelationship, Misconception, Topic
+from ..models import (Activity, Concept, ConceptRelationship, Misconception, Subject,
+                      Topic)
 from .helpers import topic_def
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
@@ -125,8 +126,23 @@ def _apply(t: Topic, data: TopicIn):
     ]
 
 
+def _require_subject(subject_id: int | None, db: Session) -> None:
+    """Every topic belongs to a subject, which belongs to a teacher.
+
+    A topic created without one is invisible to every subject-scoped list (the
+    only way the UI reaches topics) yet still reachable by id, so it escapes
+    subject isolation while remaining startable. The frontend has always sent
+    a subject; nothing but an unvalidated request could produce one.
+    """
+    if subject_id is None:
+        raise HTTPException(400, "A topic must belong to a subject.")
+    if db.get(Subject, subject_id) is None:
+        raise HTTPException(404, "Subject not found")
+
+
 @router.post("")
 def create_topic(data: TopicIn, db: Session = Depends(get_db)):
+    _require_subject(data.subject_id, db)
     t = Topic()
     _apply(t, data)
     db.add(t)
@@ -140,6 +156,8 @@ def update_topic(topic_id: int, data: TopicIn, db: Session = Depends(get_db)):
     t = db.get(Topic, topic_id)
     if not t:
         raise HTTPException(404, "Topic not found")
+    # an edit may move a topic between subjects, but never out of all of them
+    _require_subject(data.subject_id if data.subject_id is not None else t.subject_id, db)
     _apply(t, data)
     db.commit()
     db.refresh(t)

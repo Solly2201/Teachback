@@ -88,3 +88,38 @@ def test_live_session_appears_only_in_its_subject():
     # the NN dashboard is untouched by the Python session
     assert after_nn["live_session_count"] == before_nn["live_session_count"]
     assert all(o["topic_name"] in _topic_names(nn_id) for o in after_nn["recent_interactions"])
+
+
+def test_a_topic_cannot_be_created_outside_a_subject():
+    """A subject-less topic is invisible to every subject-scoped list — the
+    only way the UI reaches topics — yet still reachable by id and startable,
+    so it escapes subject isolation entirely. verify_persistence.py found six
+    of them left behind by unvalidated requests."""
+    payload = {"name": "Homeless topic", "description": "d",
+               "reference_explanation": "ref", "concepts": [], "relationships": [],
+               "misconceptions": [], "activities": []}
+    assert client.post("/api/topics", json=payload).status_code == 400
+    assert client.post("/api/topics", json={**payload, "subject_id": 999999}
+                       ).status_code == 404
+
+    subject_id = client.get("/api/teachers").json()[0]["subjects"][0]["id"]
+    created = client.post("/api/topics", json={**payload, "subject_id": subject_id})
+    assert created.status_code == 200
+    topic_id = created.json()["id"]
+    # and it must actually appear in that subject's list, not just be accepted
+    listed = client.get(f"/api/topics?subject_id={subject_id}").json()
+    assert any(t["id"] == topic_id for t in listed)
+
+
+def test_an_edit_cannot_move_a_topic_out_of_every_subject():
+    subject_id = client.get("/api/teachers").json()[0]["subjects"][0]["id"]
+    payload = {"name": "Kept topic", "subject_id": subject_id, "description": "d",
+               "reference_explanation": "ref", "concepts": [], "relationships": [],
+               "misconceptions": [], "activities": []}
+    topic_id = client.post("/api/topics", json=payload).json()["id"]
+    # omitting subject_id on an edit keeps the existing one rather than clearing it
+    assert client.put(f"/api/topics/{topic_id}",
+                      json={**payload, "subject_id": None}).status_code == 200
+    assert client.get(f"/api/topics/{topic_id}").json()["id"] == topic_id
+    listed = client.get(f"/api/topics?subject_id={subject_id}").json()
+    assert any(t["id"] == topic_id for t in listed)

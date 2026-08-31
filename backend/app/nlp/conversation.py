@@ -104,9 +104,13 @@ ACK_UNCLEAR = [
     "That's okay — let's try it from an easier angle.",
     "Let's simplify it a little.",
 ]
+# Said when a concept has had its probe and is being recorded as PARTIAL. It
+# must not claim more than that: "you have the main idea" reads as full credit,
+# and the same concept then appears under "worth another look" in the takeaway
+# and the recommendation. Warm, but honest about what was actually shown.
 ACK_ACCEPT_PARTIAL = [
-    "Good enough — you have the main idea. Let's move on.",
-    "Okay, you've got the core of it. Let's keep going.",
+    "You've shown part of that one — let's keep going and come back to it.",
+    "That's a start on it. Let's move on, and we can revisit this one.",
 ]
 ACK_MOVE_ON = [
     "That's alright — we'll come back to this one. Let's move on.",

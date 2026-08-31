@@ -240,3 +240,73 @@ def test_the_polarity_rule_does_not_fire_on_correct_answers():
                     "only on the current one",
                     "only now matters not the whole past"):
         assert not inverts_exclusivity(markov["description"], correct), correct
+
+
+# ------------------------- 7. when it is unsure, it must ask something NEW
+
+def test_a_probe_is_not_the_main_question_asked_again():
+    """The whole mitigation for an uncertain answer is "ask a better
+    follow-up". Three seeded probes were the main question reworded — one of
+    them differed by a single word — so a student who could not answer the
+    first was handed it back verbatim."""
+    import difflib
+
+    groups = [(t["name"], t["concepts"]) for t in TOPICS]
+    groups.append((PYTHON_LECTURE["title"], PYTHON_LECTURE["reviewed_concepts"]))
+    for topic_name, concepts in groups:
+        for c in concepts:
+            main = (c.get("main_question") or "").strip().lower()
+            probe = (c.get("probe_question") or "").strip().lower()
+            if not main or not probe:
+                continue
+            overlap = difflib.SequenceMatcher(None, main, probe).ratio()
+            assert overlap < 0.85, (
+                f"{topic_name} / {c['name']}: the probe restates the main question "
+                f"({overlap:.2f} similar)\n  main : {main}\n  probe: {probe}")
+
+
+def test_accepting_a_partial_answer_does_not_claim_the_whole_idea():
+    """This wording is used at the moment a concept is recorded as PARTIAL —
+    the same concept then appears under "worth another look". Saying "you have
+    the main idea" there tells the student the opposite of what was recorded."""
+    from app.nlp.conversation import ACK_ACCEPT_PARTIAL
+
+    overclaims = ("main idea", "core of it", "you understand", "you've got it",
+                  "that's right", "exactly", "complete")
+    for line in ACK_ACCEPT_PARTIAL:
+        lowered = line.lower()
+        assert not any(p in lowered for p in overclaims), line
+        # it still has to sound like a person, not a verdict
+        assert not any(p in lowered for p in ("fail", "wrong", "incorrect")), line
+
+
+# --------------- 8. student-facing text describes evidence, not the person
+
+JUDGEMENTAL = ("low engagement", "not trying", "lazy", "careless", "you failed",
+               "you are confused", "low ability", "poor effort", "didn't bother")
+
+
+def test_no_student_facing_text_judges_the_students_effort():
+    """The system observes how much evidence a session produced. It never
+    observes effort or motivation, so it must not report on them. states.py
+    was rewritten for this reason; the recommendation's per-state explanation
+    and the progress-page bullets were saying it again in two other places."""
+    from app.api.helpers import observation_evidence
+    from app.recommend.rules import GENERIC_ACTIVITIES, STATE_WHY
+    from app.states import STATE_STUDENT_DESCRIPTIONS, STATE_STUDENT_NAMES
+
+    texts = list(STATE_WHY.values()) + list(STATE_STUDENT_NAMES) \
+        + list(STATE_STUDENT_DESCRIPTIONS)
+    for activity in GENERIC_ACTIVITIES.values():
+        texts += [str(v) for v in activity.values()]
+
+    class _Obs:  # the lowest-effort observation the bullets can describe
+        features = [0.0] * 8
+        misconception_names: list = []
+
+    texts += observation_evidence(_Obs())
+
+    for text in texts:
+        lowered = (text or "").lower()
+        hit = [w for w in JUDGEMENTAL if w in lowered]
+        assert not hit, f"{hit} in student-facing text: {text!r}"

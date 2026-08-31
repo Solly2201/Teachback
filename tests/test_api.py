@@ -48,8 +48,12 @@ def test_teacher_overview():
 
 
 def test_topic_crud():
+    # a topic belongs to a subject; the UI has always sent one, and the API
+    # now requires it (see test_a_topic_cannot_be_created_outside_a_subject)
+    subject_id = client.get("/api/teachers").json()[0]["subjects"][0]["id"]
     payload = {
         "name": "Test Topic",
+        "subject_id": subject_id,
         "description": "d",
         "reference_explanation": "ref",
         "concepts": [{"name": "c1", "description": "concept one",

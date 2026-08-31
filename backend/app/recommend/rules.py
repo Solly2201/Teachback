@@ -73,7 +73,11 @@ GENERIC_ACTIVITIES = {
 
 # Per-state explanation of why that style of activity is chosen.
 STATE_WHY = {
-    "not_trying": "Your recent sessions showed very low engagement, so a short warm-up is the easiest way back in.",
+    # "low engagement" is a claim about the student's effort, which the system
+    # never observes — it only ever sees how much evidence a session produced.
+    # states.STATE_STUDENT_NAMES was rewritten for exactly this reason; this
+    # line is the same sentence said a second time and had been missed.
+    "not_trying": "Your recent sessions haven't given us much to go on yet, so a short warm-up is the easiest way back in.",
     "unclear": "The core ideas are not settled yet, so a simpler explanation will help more than practice right now.",
     "struggling": "You are putting in real effort but some ideas have gaps, so a guided exercise with hints fits best.",
     "understanding": "You demonstrated the core concepts, so the next step is applying them to a new situation.",

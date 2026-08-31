@@ -856,6 +856,33 @@ to the correct account, and no deterministic rule in this codebase separates
 them — see *Known limitations*. Overall agreement with the expected outcome
 rose from 0.77 to 0.856 across the same 139 answers.
 
+### Complete-session simulation (`scripts/session_sim.py`)
+
+The two audits above judge answers. This one judges **finished sessions**: 20
+kinds of student across all four topics, each driven through the whole
+lifecycle over the live HTTP API — conversation, misconception handling,
+takeaway, self-report, pace and feedback, the knowledge check, combined
+evidence, recommendation, activity completion and the progress page.
+
+20/20 sessions completed, **202 answers evaluated**, 20 knowledge checks, 20
+activities completed, 8–12 turns each (mean 10.1, cap 12). Every session is
+then checked against eleven things a teacher would object to — credit from
+noise, an accusation nobody earned, a repeated question, silence turned into
+remediation, an undiscussed relationship called a problem, a takeaway that
+downgrades, MCQ rewriting conversation evidence, confidence becoming
+understanding, machinery or judgement in student-facing wording — and all
+eleven pass 20/20. Full results in [EVALUATION.md](EVALUATION.md) and
+`data/nlp/session_sim.json`.
+
+It found four defects, all in what the student is told rather than in the
+scoring: four probe questions that merely restated the question the student
+had just failed to answer; an acknowledgement that said *"you have the main
+idea"* while recording the concept as partial; *"your recent sessions showed
+very low engagement"* — a claim about effort, which the system never observes —
+surviving in two places after `states.py` had been corrected for exactly that;
+and a topic that could be created with no subject at all, escaping subject
+isolation. All four are fixed and covered by regression tests.
+
 ## 18. Known limitations
 
 The system estimates **evidence of conceptual understanding within a bounded, teacher-reviewed

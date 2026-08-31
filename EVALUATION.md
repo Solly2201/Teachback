@@ -155,6 +155,78 @@ demonstrated. Given the choice between one extra question for a student who
 understands and a confident "you've got it" for a student who wrote *"is this
 going to be in the test"*, the extra question is the right error.
 
+## Twenty complete sessions (`scripts/session_sim.py`)
+
+The adversarial audit judges single answers. This runs the **whole lifecycle
+the product ships** over the live HTTP API — start, question/answer/probe loop,
+misconception handling, takeaway, confidence/difficulty/attention, pace and
+feedback, the knowledge check, combined evidence, recommendation, activity
+completion, progress page — for **20 kinds of student across all four topics**:
+strong, average, struggling, confident-but-wrong, knows-it-but-unconfident,
+terse, verbose, colloquial, different-terminology, "I don't know", partial,
+misconception, self-correcting, analogy-driven, unrelated, concept-mixing,
+knows-some-not-others, found-it-too-easy, found-it-too-fast, and a mixture.
+
+**20/20 sessions completed, 202 answers evaluated, 20 knowledge checks taken,
+20 activities completed.** Conversations ran 8–12 turns (mean 10.1), all inside
+the 12-question cap.
+
+Each finished session is then judged on what a teacher would object to, rather
+than on classification accuracy:
+
+| check | result |
+|---|---|
+| no concept demonstrated from noise alone | 20/20 |
+| no misconception named without the student stating one | 20/20 |
+| conversation ended within the question cap | 20/20 |
+| no question repeated back to back | 20/20 |
+| silence is not turned into remediation | 20/20 |
+| undiscussed relationships stay neutral | 20/20 |
+| takeaway never downgraded the conversation | 20/20 |
+| MCQ result did not rewrite conversation evidence | 20/20 |
+| high confidence with little evidence did not claim understanding | 20/20 |
+| student-facing wording stays plain and non-punitive | 20/20 |
+| session reached progress with a recorded observation | 20/20 |
+
+The confidence x evidence matrix behaves as specified. The student who
+demonstrated 6 of 6 with high confidence and low perceived difficulty is
+offered a challenge ("Reverse a string with slicing"); the student with high
+confidence and no demonstrated concepts is told *"Your confidence is high, but
+the explanations showed limited evidence so far — the activity below is a
+quick way to double-check the ideas"*; the student who knew the material but
+rated their confidence 2/10 is told what they did show. Confidence never
+appears as understanding, and never assigns a state.
+
+### What these sessions found
+
+Four defects, all of them in what the student is told rather than in the
+scoring:
+
+1. **Four probes re-asked the main question.** *"Given only the observations,
+   how do we figure out which hidden states the system went through?"* was
+   followed, when the answer was unclear, by *"Given only the observations, how
+   **can** we figure out which hidden states the system went through?"* — a
+   one-word difference. Asking a better follow-up is the system's entire
+   response to uncertainty, so a probe that restates the question disables it.
+   All four now approach the idea from a smaller, concrete angle, the way the
+   Python lecture's probes already did.
+2. **"Good enough — you have the main idea"** was said at the moment a concept
+   was recorded as *partial*, so the same concept then appeared under "worth
+   another look". The student was told the opposite of what was recorded.
+3. **"Your recent sessions showed very low engagement"** reached three of the
+   twenty students. `states.py` had already been rewritten so student-facing
+   text describes evidence rather than the person — effort is something the
+   system never observes — but the recommendation's per-state explanation and
+   the progress-page bullets said it again in two other places.
+4. **A topic could be created with no subject at all.** `POST /api/topics` left
+   `subject_id` optional; such a topic is invisible to every subject-scoped
+   list (the only route the UI uses) yet still reachable by id and startable,
+   so it escaped subject isolation. `verify_persistence.py` found six left
+   behind by unvalidated requests.
+
+Each is covered by a regression test. None of them moved the NLP numbers: the
+adversarial audit is unchanged at 0.067 false credit and 7/7 invariants.
+
 ## Remaining limitations
 
 - **A confidently wrong answer built from the right vocabulary can still be
