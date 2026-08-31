@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog.jsx'
 import { TeacherContextBar, useTeacherContext } from '../components/TeacherContext.jsx'
 import { api } from '../services/api.js'
 
@@ -26,13 +27,22 @@ export default function Topics() {
   const context = useTeacherContext()
   const subjectId = context.subject?.id
   const [topics, setTopics] = useState(null)
+  const [archived, setArchived] = useState([])
+  const [showArchived, setShowArchived] = useState(false)
   const [editing, setEditing] = useState(null) // {id?, ...topicData}
+  const [deleting, setDeleting] = useState(null) // delete-preview being confirmed
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState(null)
 
+  /* Always re-read from the backend. SQLite is the source of truth and
+     nothing about a topic is cached in the browser, so a delete or a restore
+     is reflected by asking again rather than by editing local state. */
   const load = () => {
     if (!subjectId) return
     api.topics(subjectId).then(setTopics).catch((e) => setMessage({ kind: 'error', text: e.message }))
+    api.topics(subjectId, true)
+      .then((all) => setArchived(all.filter((t) => t.archived)))
+      .catch(() => setArchived([]))
   }
   useEffect(() => { load() }, [subjectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -55,6 +65,43 @@ export default function Topics() {
       setMessage({ kind: 'error', text: e.message })
     } finally {
       setBusy(false)
+    }
+  }
+
+  /* The backend decides delete vs archive from the data and returns what it
+     will do; the dialog shows the teacher that decision before it happens. */
+  const askDelete = async (id) => {
+    setMessage(null)
+    try {
+      setDeleting(await api.topicDeletePreview(id))
+    } catch (e) {
+      setMessage({ kind: 'error', text: e.message })
+    }
+  }
+
+  const confirmDelete = async () => {
+    setBusy(true)
+    try {
+      const r = await api.deleteTopic(deleting.topic_id)
+      setDeleting(null)
+      setMessage({ kind: 'ok', text: r.message })
+      if (editing?.id === r.topic_id) setEditing(null)
+      load()
+    } catch (e) {
+      setMessage({ kind: 'error', text: e.message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const restore = async (id) => {
+    setMessage(null)
+    try {
+      await api.restoreTopic(id)
+      setMessage({ kind: 'ok', text: 'Topic restored to your active list.' })
+      load()
+    } catch (e) {
+      setMessage({ kind: 'error', text: e.message })
     }
   }
 
@@ -84,16 +131,87 @@ export default function Topics() {
         </div>
         <div className="grid md:grid-cols-2 gap-4">
           {!topics && <div className="text-sm text-charcoal-light">Loading topics…</div>}
+          {topics?.length === 0 && (
+            <div className="card p-5 text-sm text-charcoal-light">
+              No topics yet for <strong>{context.subject?.name}</strong>. Use
+              <em> + New topic</em> to add one — or switch subject above.
+            </div>
+          )}
           {topics?.map((t) => (
-            <button key={t.id} onClick={() => openTopic(t.id)} className="card p-5 text-left hover:border-brand hover:shadow-md transition-all group">
-              <div className="font-bold text-charcoal group-hover:text-brand">{t.name}</div>
-              <p className="text-sm text-charcoal-light mt-1 line-clamp-2">{t.description}</p>
-              <div className="text-xs text-charcoal-light mt-3">
-                {t.concept_count} concepts · {t.relationship_count ?? 0} relationships · {t.misconception_count} misconceptions · {t.activity_count} activities
+            <div key={t.id} className="card p-5 flex flex-col hover:border-brand hover:shadow-md transition-all group">
+              {/* the card body opens the editor; the actions below are real
+                  buttons so Delete is never a hidden corner icon */}
+              <button
+                onClick={() => openTopic(t.id)}
+                aria-label={`Open ${t.name} for editing`}
+                className="text-left w-full flex-1"
+              >
+                <div className="font-bold text-charcoal group-hover:text-brand break-words">{t.name}</div>
+                <p className="text-sm text-charcoal-light mt-1 line-clamp-2">{t.description}</p>
+                <div className="text-xs text-charcoal-light mt-3">
+                  {t.concept_count} concepts · {t.relationship_count ?? 0} relationships · {t.misconception_count} misconceptions · {t.activity_count} activities
+                </div>
+              </button>
+              <div className="flex items-center justify-between gap-3 mt-4 pt-3 border-t border-zinc-100">
+                <button
+                  onClick={() => openTopic(t.id)}
+                  aria-label={`Edit topic ${t.name}`}
+                  className="text-sm font-semibold text-brand hover:underline"
+                >
+                  Edit →
+                </button>
+                <button
+                  onClick={() => askDelete(t.id)}
+                  aria-label={`Delete topic ${t.name}`}
+                  title={`Delete ${t.name}`}
+                  className="text-sm font-semibold text-brand border border-brand/40 hover:bg-brand hover:text-white rounded-md px-3 py-1.5 transition-colors"
+                >
+                  Delete
+                </button>
               </div>
-            </button>
+            </div>
           ))}
         </div>
+
+        {archived.length > 0 && (
+          <div className="card">
+            <button
+              onClick={() => setShowArchived((v) => !v)}
+              className="card-header w-full text-left normal-case"
+            >
+              <span>Archived topics ({archived.length})</span>
+              <span className="text-white/80 font-normal">{showArchived ? 'hide' : 'show'}</span>
+            </button>
+            {showArchived && (
+              <div className="p-4 space-y-2">
+                <p className="text-xs text-charcoal-light">
+                  These topics were removed from the active list because students had already
+                  worked on them. No new TeachBack can start on them, and all their existing
+                  sessions, knowledge-check attempts and progress records were kept.
+                </p>
+                {archived.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between gap-3 border border-zinc-200 rounded-md p-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-charcoal truncate">{t.name}</div>
+                      <div className="text-xs text-charcoal-light">
+                        Archived{t.archived_at ? ` on ${t.archived_at.slice(0, 10)}` : ''}
+                      </div>
+                    </div>
+                    <button onClick={() => restore(t.id)} className="btn-secondary whitespace-nowrap">Restore</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <ConfirmDeleteDialog
+          noun="topic"
+          preview={deleting}
+          busy={busy}
+          onCancel={() => setDeleting(null)}
+          onConfirm={confirmDelete}
+        />
       </div>
     )
   }
@@ -311,12 +429,30 @@ export default function Topics() {
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <button onClick={save} disabled={busy || !editing.name.trim()} className="btn-primary">
           {busy ? 'Saving…' : 'Save topic'}
         </button>
         <button onClick={() => { setEditing(null); setMessage(null) }} className="btn-secondary">Cancel</button>
+        {editing.id && (
+          <button
+            onClick={() => askDelete(editing.id)}
+            disabled={busy}
+            aria-label={`Delete topic ${editing.name}`}
+            className="ml-auto px-4 py-2 rounded-md font-semibold text-brand border border-brand/40 hover:bg-brand hover:text-white transition-colors"
+          >
+            Delete topic
+          </button>
+        )}
       </div>
+
+      <ConfirmDeleteDialog
+        noun="topic"
+        preview={deleting}
+        busy={busy}
+        onCancel={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

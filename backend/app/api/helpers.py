@@ -1,5 +1,8 @@
 """Shared serialisation helpers for the API layer."""
-from ..models import Observation, Student, Topic
+from sqlalchemy.orm import Session
+
+from ..models import (ActivityCompletion, Observation, Quiz, QuizAttempt, Student,
+                      TeachSession, Topic)
 from ..states import STATE_NAMES, STATE_STUDENT_NAMES
 
 
@@ -49,6 +52,58 @@ def relationship_summary(plan: dict | None) -> list[dict]:
          "status_label": REL_STATUS_LABEL[relationship_status(r.get("status"))]}
         for r in (plan or {}).get("relationships", [])
     ]
+
+
+# --- delete / archive: how much student history hangs off a topic ----------
+# Deleting from the UI must never destroy what students did. A Topic is the
+# thing every learning record points at — TeachSession, Observation,
+# QuizAttempt (through its Quiz) and ActivityCompletion all carry its id — so
+# both delete actions (lecture and topic) ask this one question of these same
+# tables. Sharing the count means the two workflows can never disagree about
+# whether a topic still has history worth preserving.
+
+HISTORY_LABELS = [
+    ("sessions", "TeachBack session"),
+    ("quiz_attempts", "knowledge-check attempt"),
+    ("activity_completions", "completed activity"),
+    ("observations", "learning-state record"),
+]
+
+EMPTY_HISTORY = {key: 0 for key, _ in HISTORY_LABELS} | {"total": 0}
+
+
+def topic_history(db: Session, topic_id: int | None) -> dict:
+    """Count the student records that reference this topic."""
+    if not topic_id:
+        return dict(EMPTY_HISTORY)
+    counts = {
+        "sessions": db.query(TeachSession).filter(TeachSession.topic_id == topic_id).count(),
+        "observations": db.query(Observation).filter(Observation.topic_id == topic_id).count(),
+        "quiz_attempts": (db.query(QuizAttempt)
+                          .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
+                          .filter(Quiz.topic_id == topic_id).count()),
+        "activity_completions": (db.query(ActivityCompletion)
+                                 .filter(ActivityCompletion.topic_id == topic_id).count()),
+    }
+    counts["total"] = sum(counts.values())
+    return counts
+
+
+def history_summary(history: dict) -> str:
+    """Plain-English list of the record types that actually exist.
+
+    Listing every category including the empty ones produced a dialog that
+    said "students have already worked on this (0 sessions, 0 checks)" while
+    still archiving — true but incomprehensible. Only non-zero counts are
+    named, so the reason something is being archived is the reason shown.
+    """
+    parts = [f"{history[key]} {label}{'' if history[key] == 1 else 's'}"
+             for key, label in HISTORY_LABELS if history.get(key)]
+    if not parts:
+        return "no student records"
+    if len(parts) == 1:
+        return parts[0]
+    return ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
 def topic_def(topic: Topic) -> dict:

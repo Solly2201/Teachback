@@ -94,7 +94,7 @@ contradiction examples and custom activities (the seeded Backpropagation topic i
 example). Both paths feed the exact same underlying topic structure — there is one knowledge
 system, not two.
 
-### Lecture lifecycle: publish, update, delete/archive
+### Lecture and topic lifecycle: publish, update, delete/archive
 
 One lecture owns one published Topic. Publishing rebuilds that Topic from the reviewed draft;
 if another lecture were ever pointing at the same Topic, publishing gives this lecture a fresh
@@ -115,6 +115,23 @@ foreign keys, still readable from the student's Progress page. `GET /api/lecture
 tells the UI which of the two will happen so the confirmation dialog can say it plainly, an
 **Archived** section lists archived lectures, and `POST /api/lectures/{id}/restore` brings one
 back. Tests: `tests/test_lecture_lifecycle.py`.
+
+**A topic can be removed directly too.** Topic Management is the other way into the same
+knowledge structure, so `DELETE /api/topics/{id}` follows the identical rule and reads the
+identical counts (`api/helpers.py:topic_history` — one implementation, so the two workflows
+cannot disagree about whether history exists):
+
+| student history | behaviour | what happens |
+|---|---|---|
+| none | **deleted** | the topic and everything it owns (concepts, relationships, misconceptions, activities, its quiz and that quiz's questions) are removed; a lecture that published it is unlinked back to a **draft**, keeping the teacher's material and leaving no dangling `topic_id` |
+| any sessions / observations / quiz attempts / activity completions | **archived** | `archived_at` is set on the topic and on the lecture that owns it |
+
+Every topic card in Topic Management carries a visible **Edit** / **Delete** action row (the
+same treatment the lecture cards use), `GET /api/topics/{id}/delete-preview` tells the dialog
+which of the two will happen and which records are being kept, an **Archived topics** section
+lists what was archived, and `POST /api/topics/{id}/restore` brings a topic and its lecture
+back. Both confirmations render from one shared `ConfirmDeleteDialog` component.
+Tests: `tests/test_topic_lifecycle.py`.
 
 ## 5. Student workflow
 
@@ -623,9 +640,10 @@ reproducible). Production frontend build: `cd teachback/frontend && npm run buil
 ```bash
 cd teachback
 python -m pytest tests -q      # NLP, conversation, PDF ingestion, concept quality,
-                               # lecture lifecycle (delete/archive), evidence safety,
-                               # HMM validation + artifact integrity, subject isolation,
-                               # quiz, feedback, recommendations, activities, API end-to-end
+                               # lecture + topic lifecycle (delete/archive/restore),
+                               # evidence safety, HMM validation + artifact integrity,
+                               # subject isolation, quiz, feedback, recommendations,
+                               # activities, test-database isolation, API end-to-end
 
 python scripts/evaluate_nlp.py         # answer-evaluator metrics on the labelled set
 python scripts/evaluate_nlp.py --tune  # threshold calibration sweep
@@ -636,6 +654,30 @@ python scripts/verify_persistence.py   # SQLite is the source of truth; no orpha
 python scripts/verify_ui.py            # headless-browser check of the real interface
                                        # (needs the backend on :8000 and vite on :5173)
 ```
+
+**The suite never writes to the demo database.** The tests exercise the real API against a
+real SQLite file — they create topics, publish lectures, start sessions and submit knowledge
+checks — and for a while those rows landed in `backend/teachback.db`, so names like
+*Test Topic v2* and *Homeless topic* showed up in the actual Topic Management screen. Cleaning
+up afterwards would only ever cover the objects someone remembered to list, so the isolation is
+structural instead (`tests/conftest.py`):
+
+1. `TEACHBACK_DB_PATH` is pointed at a throwaway file in a temp directory **before** anything
+   imports `app.config`, so the engine, every session and `seed_db()` address that file and the
+   demo database is never opened.
+2. That file is seeded once per session and snapshotted.
+3. Every test starts from a fresh copy of the snapshot — so tests cannot see each other's
+   writes either, and a test that fails halfway through creating something still leaves nothing
+   behind.
+
+`tests/test_test_isolation.py` asserts all of it from the outside, including that the demo
+database file is byte-for-byte untouched across a run. Any script that imports `app.config`
+honours the same environment variable, so an experiment can be pointed at a scratch database:
+`TEACHBACK_DB_PATH=/tmp/scratch.db python scripts/session_sim.py`.
+
+`python scripts/clean_test_artifacts.py` reports (and with `--apply` removes) rows left in the
+demo database by runs that predate this, deciding what is intentional from `app/seed_content.py`
+rather than from a hard-coded list of names, and finishes with a foreign-key integrity check.
 
 ## 15. Faculty demo (~5 minutes)
 
@@ -697,6 +739,8 @@ teachback/
 │   ├── nlp_eval/            hand-labelled responses for the legacy NLP evaluation
 │   └── artifacts/           trained HMM, state mapping, evaluation results
 ├── scripts/evaluate_nlp.py  answer-evaluator metrics + threshold tuning
+├── scripts/clean_test_artifacts.py
+│                            remove script/test-created rows from the demo DB
 ├── tests/                   pytest suite (100+ tests)
 └── README.md
 ```

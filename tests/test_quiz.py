@@ -246,6 +246,16 @@ def test_lecture_draft_quiz_review_and_regenerate():
 
 
 def test_knowledge_check_stats_scoped_by_subject():
+    # make the attempt this test is about, rather than relying on one another
+    # test happened to leave behind
+    topic = _strings_topic()
+    q = client.get(f"/api/topics/{topic['id']}/quiz").json()
+    key, _ = _answer_key(q["quiz_id"])
+    client.post(f"/api/quiz/{q['quiz_id']}/submit", json={
+        "student_id": _student()["id"],
+        "answers": [{"question_id": x["id"], "selected_index": key[x["id"]]}
+                    for x in q["questions"]]})
+
     teachers = client.get("/api/teachers").json()
     subs = {s["name"]: s["id"] for t in teachers for s in t["subjects"]}
     py = client.get(f"/api/teacher/overview?subject_id={subs['Python Programming']}").json()
@@ -254,11 +264,13 @@ def test_knowledge_check_stats_scoped_by_subject():
     nn_topic_names = {t["name"] for t in client.get(f"/api/topics?subject_id={subs['Neural Networks']}").json()}
     assert all(k["name"] in py_topic_names for k in py.get("knowledge_checks", []))
     assert all(k["name"] in nn_topic_names for k in nn.get("knowledge_checks", []))
-    # the Strings attempts from these tests appear under Python, with
-    # per-concept MCQ and TeachBack numbers kept separate
+    # the Strings attempt appears under Python, with per-concept MCQ and
+    # TeachBack numbers kept separate
     strings_stats = next((k for k in py["knowledge_checks"] if "Strings" in k["name"]), None)
     assert strings_stats is not None and strings_stats["attempts"] >= 1
     assert all("mcq_percent" in c and "teachback_percent" in c for c in strings_stats["concepts"])
+    # and never under the other subject
+    assert not any("Strings" in k["name"] for k in nn.get("knowledge_checks", []))
 
 
 # ---------------------------------------------------------------- positions

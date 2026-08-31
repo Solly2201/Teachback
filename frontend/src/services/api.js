@@ -22,7 +22,13 @@ export const api = {
   students: () => request('/students'),
   student: (id) => request(`/students/${id}`),
   progress: (id) => request(`/students/${id}/progress`),
-  topics: (subjectId) => request(`/topics${subjectId ? `?subject_id=${subjectId}` : ''}`),
+  topics: (subjectId, includeArchived = false) => {
+    const params = new URLSearchParams()
+    if (subjectId) params.set('subject_id', subjectId)
+    if (includeArchived) params.set('include_archived', 'true')
+    const query = params.toString()
+    return request(`/topics${query ? `?${query}` : ''}`)
+  },
   topic: (id) => request(`/topics/${id}`),
   teachers: () => request('/teachers'),
   lectures: (subjectId, includeArchived = false) => {
@@ -43,6 +49,9 @@ export const api = {
     request('/lectures/extract', { method: 'POST', body: JSON.stringify({ filename, content_base64: contentBase64 }) }),
   createTopic: (data) => request('/topics', { method: 'POST', body: JSON.stringify(data) }),
   updateTopic: (id, data) => request(`/topics/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  topicDeletePreview: (id) => request(`/topics/${id}/delete-preview`),
+  deleteTopic: (id) => request(`/topics/${id}`, { method: 'DELETE' }),
+  restoreTopic: (id) => request(`/topics/${id}/restore`, { method: 'POST' }),
   startSession: (student_id, topic_id) =>
     request('/sessions/start', { method: 'POST', body: JSON.stringify({ student_id, topic_id }) }),
   respond: (sessionId, text) =>

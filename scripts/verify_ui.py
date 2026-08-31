@@ -3,8 +3,8 @@
 Unit tests prove the API behaves; this proves the *interface* a faculty member
 actually sees does. It drives a real Chrome against the running dev server and
 asserts on the rendered DOM, console errors and layout — in particular that the
-lecture Delete/Archive control is genuinely visible and clickable, since a
-control that exists only in the source is not a feature.
+lecture and topic Delete/Archive controls are genuinely visible and clickable,
+since a control that exists only in the source is not a feature.
 
 Prerequisites (started separately):
     backend :8000    python -m uvicorn app.main:app --port 8000
@@ -94,6 +94,36 @@ def overflow(driver) -> int:
     return driver.execute_script(
         "return Math.max(0, document.documentElement.scrollWidth - "
         "document.documentElement.clientWidth)")
+
+
+def api_get(url: str, path: str):
+    import urllib.request
+    with urllib.request.urlopen(f"{url}{path}", timeout=20) as r:
+        return json.loads(r.read().decode())
+
+
+def api_post(url: str, path: str, payload: dict):
+    import urllib.request
+    req = urllib.request.Request(
+        f"{url}{path}", data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode())
+
+
+def api_delete(url: str, path: str):
+    import urllib.request
+    req = urllib.request.Request(f"{url}{path}", method="DELETE")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read().decode())
+    except Exception:
+        return None
+
+
+def card_titles(driver) -> list[str]:
+    """The topic/lecture names currently rendered on the page."""
+    return [e.text.strip() for e in driver.find_elements(By.CSS_SELECTOR, ".card .font-bold")]
 
 
 def main() -> int:
@@ -206,6 +236,141 @@ def main() -> int:
             except TimeoutException:
                 check("a confirmation dialog opens (not a one-click delete)", False,
                       "no [role=dialog] appeared")
+
+        # ------------------------------------------ topic management delete
+        # The whole point of the action is that a teacher can remove a topic
+        # from the real screen, so this drives it end to end on a probe topic
+        # it creates and then removes — the database is left as it was found.
+        section("Faculty -> Topic Management: delete a topic for real")
+        PROBE = "UI probe topic"
+        other_subject = None
+        if target:
+            for t in teachers_api:
+                for sub in t["subjects"]:
+                    if sub["id"] != target[1]:
+                        other_subject = (t["id"], sub["id"])
+                        break
+                if other_subject:
+                    break
+
+            for stale in api_get(url, f"/api/topics?subject_id={target[1]}&include_archived=true"):
+                if stale["name"] == PROBE:
+                    api_delete(url, f"/api/topics/{stale['id']}")
+            probe = api_post(url, "/api/topics", {
+                "name": PROBE, "subject_id": target[1],
+                "description": "Created by verify_ui.py and removed again.",
+                "reference_explanation": "ref", "concepts": [], "relationships": [],
+                "misconceptions": [], "activities": []})
+
+            driver.get(f"{url}/topics")
+            check("the Topic Management page renders", wait_text(driver, "Topic Management"))
+            time.sleep(2.5)
+            check("the new topic appears in the list", PROBE in card_titles(driver),
+                  f"{len(card_titles(driver))} cards")
+
+            del_btns = [b for b in driver.find_elements(By.TAG_NAME, "button")
+                        if b.text.strip().lower() == "delete" and b.is_displayed()]
+            check("a Delete control is VISIBLE on every topic card",
+                  len(del_btns) >= len(card_titles(driver)) - 1,
+                  f"{len(del_btns)} visible")
+            # match the exact accessible name: the Edit control on the same
+            # card also ends with the topic name
+            probe_label = f"Delete topic {PROBE}"
+            probe_btn = next(
+                (b for b in del_btns
+                 if (b.get_attribute("aria-label") or "") == probe_label), None)
+            check("the probe topic has its own labelled Delete control",
+                  probe_btn is not None,
+                  probe_btn.get_attribute("aria-label") if probe_btn else "not found")
+
+            if probe_btn:
+                box = probe_btn.rect
+                check("Delete control has a real clickable area",
+                      box["width"] >= 40 and box["height"] >= 20,
+                      f"{int(box['width'])}x{int(box['height'])} px")
+                check("Delete control is not covered by another element",
+                      driver.execute_script(
+                          "const el=arguments[0], r=el.getBoundingClientRect();"
+                          "const hit=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);"
+                          "return hit===el || el.contains(hit);", probe_btn))
+                check("no horizontal overflow on the topic list", overflow(driver) == 0,
+                      f"{overflow(driver)}px")
+
+                # --- Cancel must do nothing at all
+                probe_btn.click()
+                try:
+                    WebDriverWait(driver, 20).until(
+                        EC.presence_of_element_located((By.XPATH, "//div[@role='dialog']")))
+                    dialog = driver.find_element(By.XPATH, "//div[@role='dialog']")
+                    check("clicking Delete opens a confirmation (not a one-click delete)",
+                          dialog.is_displayed())
+                    check("the dialog says the topic will be permanently deleted",
+                          "permanently deleted" in dialog.text.lower(),
+                          dialog.text.split("\n")[0][:90])
+                    cancel = next((b for b in dialog.find_elements(By.TAG_NAME, "button")
+                                   if b.text.strip().lower() == "cancel"), None)
+                    if cancel:
+                        cancel.click()
+                        time.sleep(1.5)
+                        check("Cancel dismisses the dialog",
+                              not driver.find_elements(By.XPATH, "//div[@role='dialog']"))
+                        check("Cancel changed nothing — the topic is still there",
+                              any(t["name"] == PROBE for t in
+                                  api_get(url, f"/api/topics?subject_id={target[1]}")))
+                except TimeoutException:
+                    check("clicking Delete opens a confirmation (not a one-click delete)",
+                          False, "no [role=dialog] appeared")
+
+                # --- confirm, and the topic must actually go
+                probe_btn = next(
+                    (b for b in driver.find_elements(By.TAG_NAME, "button")
+                     if (b.get_attribute("aria-label") or "") == probe_label
+                     and b.is_displayed()), None)
+                if probe_btn:
+                    probe_btn.click()
+                    try:
+                        WebDriverWait(driver, 20).until(
+                            EC.presence_of_element_located((By.XPATH, "//div[@role='dialog']")))
+                        dialog = driver.find_element(By.XPATH, "//div[@role='dialog']")
+                        confirm = next((b for b in dialog.find_elements(By.TAG_NAME, "button")
+                                        if b.text.strip().lower().startswith("delete")), None)
+                        check("the dialog offers an explicit confirm action",
+                              confirm is not None)
+                        if confirm:
+                            confirm.click()
+                            time.sleep(2.5)
+                            check("the topic disappears from the list immediately",
+                                  PROBE not in card_titles(driver))
+                            check("the backend no longer has it",
+                                  not any(t["name"] == PROBE for t in api_get(
+                                      url, "/api/topics")))
+                            driver.get(f"{url}/topics")
+                            time.sleep(2.5)
+                            check("refreshing the page does not bring it back",
+                                  PROBE not in card_titles(driver))
+                    except TimeoutException:
+                        check("the confirmation dialog reopened for the delete", False,
+                              "no [role=dialog] appeared")
+
+            if other_subject:
+                driver.get(url)
+                driver.execute_script(
+                    "localStorage.setItem('teachback_teacher_ctx', arguments[0])",
+                    json.dumps({"teacher_id": other_subject[0],
+                                "subject_id": other_subject[1]}))
+                driver.get(f"{url}/topics")
+                time.sleep(2.5)
+                check("the other subject never shows the deleted topic",
+                      PROBE not in card_titles(driver))
+
+            # whatever happened above, do not leave the probe behind
+            for stale in api_get(url, f"/api/topics?subject_id={target[1]}&include_archived=true"):
+                if stale["name"] == PROBE:
+                    api_delete(url, f"/api/topics/{stale['id']}")
+            driver.get(url)
+            driver.execute_script(
+                "localStorage.setItem('teachback_teacher_ctx', arguments[0])",
+                json.dumps({"teacher_id": target[0], "subject_id": target[1]}))
 
         # ------------------------------------------------- subject switcher
         section("Teacher / subject switcher actually refetches")

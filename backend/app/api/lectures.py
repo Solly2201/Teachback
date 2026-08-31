@@ -32,14 +32,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import (Activity, ActivityCompletion, Concept, ConceptRelationship,
-                      Lecture, Misconception, Observation, Quiz, QuizAttempt,
-                      Subject, TeachSession, Teacher, Topic)
+from ..models import (Activity, Concept, ConceptRelationship, Lecture,
+                      Misconception, Quiz, Subject, Teacher, Topic)
 from ..nlp.lecture_prep import ScannedPdfError, extract_material, prepare_lecture
 from ..nlp.note_template import AI_PREP_PROMPT, NOTE_TEMPLATE
 from ..nlp.quiz_gen import (QUIZ_SIZE, generate_quiz_candidates,
                             generate_quiz_questions)
-from .helpers import topic_def
+from .helpers import history_summary, topic_def, topic_history
 from .quiz import build_quiz_for_topic
 
 router = APIRouter(prefix="/api", tags=["lectures"])
@@ -516,46 +515,13 @@ def regenerate_quiz(lecture_id: int, data: RegenerateIn, db: Session = Depends(g
 
 
 def lecture_history(db: Session, lec: Lecture) -> dict:
-    """How much student history hangs off this lecture's published topic."""
-    if not lec.topic_id:
-        return {"sessions": 0, "observations": 0, "quiz_attempts": 0,
-                "activity_completions": 0, "total": 0}
-    counts = {
-        "sessions": db.query(TeachSession).filter(TeachSession.topic_id == lec.topic_id).count(),
-        "observations": db.query(Observation).filter(Observation.topic_id == lec.topic_id).count(),
-        "quiz_attempts": (db.query(QuizAttempt)
-                          .join(Quiz, Quiz.id == QuizAttempt.quiz_id)
-                          .filter(Quiz.topic_id == lec.topic_id).count()),
-        "activity_completions": (db.query(ActivityCompletion)
-                                 .filter(ActivityCompletion.topic_id == lec.topic_id).count()),
-    }
-    counts["total"] = sum(counts.values())
-    return counts
+    """How much student history hangs off this lecture's published topic.
 
-
-HISTORY_LABELS = [
-    ("sessions", "TeachBack session"),
-    ("quiz_attempts", "knowledge-check attempt"),
-    ("activity_completions", "completed activity"),
-    ("observations", "learning-state record"),
-]
-
-
-def history_summary(history: dict) -> str:
-    """Plain-English list of the record types that actually exist.
-
-    Listing every category including the empty ones produced a dialog that
-    said "students have already worked on this (0 sessions, 0 checks)" while
-    still archiving — true but incomprehensible. Only non-zero counts are
-    named, so the reason the lecture is being archived is the reason shown.
+    The counting itself lives in helpers.topic_history so that deleting a
+    topic directly (Topic Management) and deleting the lecture that owns it
+    reach the identical delete-or-archive decision.
     """
-    parts = [f"{history[key]} {label}{'' if history[key] == 1 else 's'}"
-             for key, label in HISTORY_LABELS if history.get(key)]
-    if not parts:
-        return "no student records"
-    if len(parts) == 1:
-        return parts[0]
-    return ", ".join(parts[:-1]) + " and " + parts[-1]
+    return topic_history(db, lec.topic_id)
 
 
 @router.get("/lectures/{lecture_id}/delete-preview")
