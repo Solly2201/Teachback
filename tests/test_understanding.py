@@ -35,19 +35,37 @@ def test_different_terminology_not_rejected():
     assert _judge("It shows how sensitive the error is to a weight.") in ("correct", "partial")
 
 
-# An analogy gets no automatic credit and no rejection: the tutor asks the
+# A BARE analogy gets no automatic credit and no rejection: the tutor asks the
 # student to connect it back to the concept (or takes a smaller step) —
 # it is never simply marked "correct" or treated as a misconception.
-def test_analogy_gets_connect_back_followup_not_credit():
-    text = "It's like checking which direction makes the error go up or down."
+def test_bare_analogy_gets_connect_back_followup_not_credit():
+    text = "It's like a compass, sort of."
     analysis = analyze_response(text, BACKPROP)
-    analysis["target_check"] = targeted_concept_check(text, GRADIENT)
+    analysis["target_check"] = targeted_concept_check(
+        text, GRADIENT, misconceptions=BACKPROP["misconceptions"])
     plan = build_plan(BACKPROP)
     plan["current"] = 1  # Gradient is the current concept
     plan["concepts"][0]["status"] = "covered"
     plan, turn = play_turn(plan, analysis, BACKPROP)
     assert turn["followup"]["kind"] in ("probe", "easier")
     assert plan["concepts"][1]["status"] == "pending"  # no credit yet
+    assert analysis["detected_misconceptions"] == []
+
+
+# An "it's like" answer that gestures at the right neighbourhood is neither
+# credited nor rejected: the tutor asks the student to connect it back. This is
+# the same rule as above, checked on an analogy that IS in the right area.
+def test_on_track_analogy_is_probed_rather_than_judged():
+    text = "It's like checking which direction makes the error go up or down."
+    analysis = analyze_response(text, BACKPROP)
+    analysis["target_check"] = targeted_concept_check(
+        text, GRADIENT, misconceptions=BACKPROP["misconceptions"])
+    plan = build_plan(BACKPROP)
+    plan["current"] = 1
+    plan["concepts"][0]["status"] = "covered"
+    plan, turn = play_turn(plan, analysis, BACKPROP)
+    assert turn["followup"] is not None
+    assert plan["concepts"][1]["status"] in ("pending", "covered", "partial")
     assert analysis["detected_misconceptions"] == []
 
 

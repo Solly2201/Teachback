@@ -21,10 +21,11 @@ import re
 
 # Targeted thresholds are a little more permissive than the analyzer's global
 # ones: the question already establishes the context, so a short on-point
-# answer ("It tells us how the loss changes") should count. The contextual
-# score (concept name prefixed to the answer) is only trusted when the answer
-# shares at least one content word with the concept text — the shared prefix
-# otherwise inflates similarity for any text, including "I don't know".
+# answer ("It tells us how the loss changes") should count. Neither score is
+# trusted unless the answer says something ABOUT the concept (analyzer.
+# informative_terms): the concept name sits inside the reference texts, so a
+# bare mention of it — or "I don't know" behind the same prefix — otherwise
+# scores as high as a real explanation.
 # Calibrated against the labelled dataset in data/nlp/labeled_answers.json
 # (python scripts/evaluate_nlp.py --tune): these values maximised evidence-
 # level accuracy (0.83) without hurting misconception precision (1.0).
@@ -33,10 +34,24 @@ TARGET_PARTIAL_T = 0.42
 CTX_COVERED_T = 0.62
 CTX_PARTIAL_T = 0.55
 MIN_WORDS = 2  # a two-word answer ("Text data.") can still be real evidence
+# how many informative words the answer must carry before the prefix-inflated
+# contextual score is trusted on its own (see _verdict)
+MIN_CONTEXT_TERMS = 2
 MAX_QUESTIONS = 12
 MAX_REL_QUESTIONS = 2  # at most this many relationship questions per session
 
-GIVE_UP_PHRASES = ("i don't know", "i dont know", "idk", "no idea", "not sure", "no clue")
+GIVE_UP_PHRASES = ("i don't know", "i dont know", "idk", "no idea", "not sure",
+                   "no clue", "i forgot", "no memory of")
+# Students hedge in the middle of the phrase ("I don't REALLY remember this
+# one"), so the fixed phrases above are backed by a small pattern.
+_GIVE_UP_RE = re.compile(
+    r"\b(?:do\s?n[o']?t|cannot|can'?t|could\s?n[o']?t|did\s?n[o']?t)\s+"
+    r"(?:\w+\s+){0,2}?(?:know|remember|recall|get)\b"
+    r"|\bno\s+(?:idea|clue|memory)\b|\bforgot\b|\bnot\s+sure\b", re.I)
+
+
+def _gave_up(text: str) -> bool:
+    return any(p in text for p in GIVE_UP_PHRASES) or bool(_GIVE_UP_RE.search(text))
 
 # Markers of an analogy/metaphor answer. An analogy that is semantically in
 # the neighbourhood of the concept is treated as potentially meaningful
@@ -184,7 +199,7 @@ def _verdict(analysis: dict, entry: dict, confirm_context: bool = False) -> str:
     """
     words = analysis.get("word_count", 0)
     text = " ".join(analysis.get("sentences", [])).lower()
-    gave_up = words < 8 and any(p in text for p in GIVE_UP_PHRASES)
+    gave_up = words < 10 and _gave_up(text)
     if confirm_context and not gave_up and _is_affirmation(text):
         return "affirm"
     if words < MIN_WORDS or gave_up:
@@ -193,11 +208,36 @@ def _verdict(analysis: dict, entry: dict, confirm_context: bool = False) -> str:
     tc = analysis.get("target_check") or {}
     plain = max(_similarity_for(analysis, entry), tc.get("plain", 0.0))
     ctx = tc.get("contextual", 0.0)
-    overlap = tc.get("overlap", 0)
+    # Does the answer say anything about the concept beyond naming it?
+    #
+    # Both similarity scores are inflated by the concept name, because the
+    # reference texts are written as "Name: explanation". So "python uses
+    # indexing" sits at ~0.8 against Indexing while explaining nothing, and
+    # "something with brackets" clears the contextual bar on the shared prefix
+    # alone — while a correct paraphrase that avoids the jargon can share no
+    # words with the teacher's text at all. Credit therefore requires either
+    # several informative words about the concept, or one of the teacher's own
+    # key words for it (analyzer.concept_evidence). Neither can be satisfied by
+    # naming the concept: the name is excluded from both signals. This is a
+    # structural requirement, not a similarity bar — no threshold moved.
+    terms = tc.get("informative_terms")
+    if terms is None:
+        # callers predating this signal keep the previous lexical behaviour
+        # rather than being silently blocked
+        corroborated = tc.get("overlap", 0) >= 1 if tc else True
+    else:
+        corroborated = tc.get("corroborated",
+                              len(terms) >= MIN_CONTEXT_TERMS or bool(tc.get("key_terms")))
+    if not corroborated:
+        return "unclear"
 
-    if plain >= TARGET_COVERED_T or (ctx >= CTX_COVERED_T and overlap >= 1):
+    # an answer that sits closer to a taught wrong claim than to the concept
+    # itself is not full credit, even when the misconception detector did not
+    # meet its (deliberately strict) bar for naming it
+    ceiling_partial = bool(tc.get("shadowed"))
+    if (plain >= TARGET_COVERED_T or ctx >= CTX_COVERED_T) and not ceiling_partial:
         return "correct"
-    if plain >= TARGET_PARTIAL_T or (ctx >= CTX_PARTIAL_T and overlap >= 1):
+    if plain >= TARGET_PARTIAL_T or ctx >= CTX_PARTIAL_T:
         return "partial"
     # an analogy in the neighbourhood of the concept: not credit, not a
     # rejection — the tutor will ask the student to connect it back
@@ -432,7 +472,7 @@ def play_turn(plan: dict, analysis: dict, topic_def: dict) -> tuple[dict, dict]:
                 # absence of evidence is not evidence of a misunderstanding.
                 res = _relationship_result(analysis, entry)
                 text = " ".join(analysis.get("sentences", [])).lower()
-                gave_up = any(ph in text for ph in GIVE_UP_PHRASES)
+                gave_up = _gave_up(text)
                 if res is not None and res["status"] == "partial" and not gave_up:
                     entry["status"] = "unclear"
                 feedback = "That's okay — here's the link: " + (

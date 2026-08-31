@@ -64,21 +64,42 @@ function IngestionReport({ report, rawText }) {
 /* Delete confirmation. The backend decides delete vs archive from the data,
    and this dialog shows the teacher exactly which one will happen and why. */
 function DeleteDialog({ preview, busy, onCancel, onConfirm }) {
+  // Escape closes the dialog, and so does clicking the backdrop — a modal a
+  // user cannot dismiss is worse than no modal.
+  useEffect(() => {
+    if (!preview) return undefined
+    const onKey = (e) => { if (e.key === 'Escape' && !busy) onCancel() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [preview, busy, onCancel])
+
   if (!preview) return null
   const archiving = preview.mode === 'archive'
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 p-4" role="dialog" aria-modal="true">
-      <div className="card max-w-lg w-full p-6 space-y-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-charcoal/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={archiving ? 'Archive lecture confirmation' : 'Delete lecture confirmation'}
+      onClick={(e) => { if (e.target === e.currentTarget && !busy) onCancel() }}
+    >
+      <div className="card max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto">
         <div className="text-lg font-bold text-charcoal">
           {archiving ? 'Archive this lecture?' : 'Delete this lecture?'}
         </div>
         <p className="text-sm text-charcoal-light">{preview.message}</p>
         {archiving && (
           <ul className="text-xs text-charcoal-light bg-zinc-50 border border-zinc-200 rounded p-3 space-y-1">
-            <li>{preview.history.sessions} TeachBack session(s) — kept</li>
-            <li>{preview.history.quiz_attempts} knowledge-check attempt(s) — kept</li>
-            <li>{preview.history.observations} learning-state record(s) — kept</li>
-            <li>{preview.history.activity_completions} completed activity/activities — kept</li>
+            {[['sessions', 'TeachBack session'],
+              ['quiz_attempts', 'knowledge-check attempt'],
+              ['activity_completions', 'completed activity'],
+              ['observations', 'learning-state record']]
+              .filter(([key]) => preview.history[key] > 0)
+              .map(([key, label]) => (
+                <li key={key}>
+                  {preview.history[key]} {label}{preview.history[key] === 1 ? '' : 's'} — <strong>kept</strong>
+                </li>
+              ))}
           </ul>
         )}
         <div className="flex justify-end gap-3">
@@ -338,14 +359,24 @@ export default function Lectures() {
         <div className="grid md:grid-cols-2 gap-4">
           {!lectures && <div className="text-sm text-charcoal-light">Loading lectures…</div>}
           {lectures?.length === 0 && (
-            <div className="card p-5 text-sm text-charcoal-light">No lectures yet for {subject?.name}. Create the first one.</div>
+            <div className="card p-5 text-sm text-charcoal-light">
+              No lectures yet for <strong>{subject?.name}</strong>. Use
+              <em> + Create Lecture TeachBack</em> to add one — or switch subject above if you
+              were looking for a different class.
+            </div>
           )}
           {lectures?.map((l) => (
-            <div key={l.id} className="card p-5 hover:border-brand hover:shadow-md transition-all group relative">
-              <button onClick={() => openLecture(l.id)} className="text-left w-full">
-                <div className="flex items-center justify-between gap-3 pr-16">
-                  <div className="font-bold text-charcoal group-hover:text-brand">{l.title}</div>
-                  <span className={`text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${
+            <div key={l.id} className="card p-5 flex flex-col hover:border-brand hover:shadow-md transition-all group">
+              {/* the card body opens the review screen; the actions below are
+                  separate real buttons so Delete is never a hidden corner icon */}
+              <button
+                onClick={() => openLecture(l.id)}
+                aria-label={`Open ${l.title} for review`}
+                className="text-left w-full flex-1"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-bold text-charcoal group-hover:text-brand break-words min-w-0">{l.title}</div>
+                  <span className={`shrink-0 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${
                     l.status === 'published' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
                   }`}>
                     {l.status === 'published' ? 'live' : 'draft'}
@@ -356,13 +387,22 @@ export default function Lectures() {
                   {(l.draft?.concepts || []).length} concepts · {(l.objectives || []).length} objectives
                 </div>
               </button>
-              <button
-                onClick={() => askDelete(l.id)}
-                title={`Delete ${l.title}`}
-                className="absolute top-4 right-4 text-xs font-semibold text-charcoal-light hover:text-brand border border-zinc-200 hover:border-brand rounded px-2 py-1 bg-white"
-              >
-                Delete
-              </button>
+              <div className="flex items-center justify-between gap-3 mt-4 pt-3 border-t border-zinc-100">
+                <button
+                  onClick={() => openLecture(l.id)}
+                  className="text-sm font-semibold text-brand hover:underline"
+                >
+                  Review &amp; edit →
+                </button>
+                <button
+                  onClick={() => askDelete(l.id)}
+                  aria-label={`Delete lecture ${l.title}`}
+                  title={`Delete ${l.title}`}
+                  className="text-sm font-semibold text-brand border border-brand/40 hover:bg-brand hover:text-white rounded-md px-3 py-1.5 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>

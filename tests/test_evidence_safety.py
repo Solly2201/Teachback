@@ -214,3 +214,82 @@ def test_session_endpoints_reject_unknown_ids_and_finished_sessions():
     assert client.post("/api/sessions/999999/respond", json={"text": "hi"}).status_code == 404
     assert client.post("/api/sessions/999999/finish", json={
         "attention": 5, "confidence": 5, "difficulty": 5}).status_code == 404
+
+
+# --------------------------------------- the state and the session agree in words
+
+@pytest.mark.skipif(not hmm_available(), reason="HMM not trained")
+def test_a_strong_session_under_a_weak_state_is_explained_not_contradicted():
+    """The learning state reads the student's whole history, so a strong
+    session can sit under a cautious state. Shown side by side without a word
+    of explanation that reads as the system contradicting itself."""
+    topics = client.get("/api/topics").json()
+    topic = next(t for t in topics if "Strings" in t["name"])
+    tdef = client.get(f"/api/topics/{topic['id']}").json()
+    student = client.get("/api/students").json()[0]
+
+    start = client.post("/api/sessions/start",
+                        json={"student_id": student["id"], "topic_id": topic["id"]}).json()
+    sid = start["session_id"]
+    answers = {
+        "Strings": "a string is text you keep between quotes",
+        "String assignment": "you save the text under a name so you can use it again",
+        "Characters": "it is made of single letters sitting in a fixed order",
+        "Indexing": "you use the position number to pull out one letter, and the first is zero",
+        "Slicing": "you take a part of the text between a start and an end position",
+        "split() and join()": "split breaks the text into a list of pieces and join puts them back",
+    }
+    question = start["question"]
+    guard = 0
+    while question is not None and guard < 14:
+        guard += 1
+        concept = (question.get("concept") or "").split(" → ")[0]
+        text = answers.get(concept, "it is about working with text in python")
+        step = client.post(f"/api/sessions/{sid}/respond", json={"text": text}).json()
+        if step["awaiting_self_report"]:
+            break
+        question = step.get("followup")
+
+    result = client.post(f"/api/sessions/{sid}/finish", json={
+        "attention": 8, "confidence": 7, "difficulty": 4}).json()
+    demonstrated = [c for c in result["concept_summary"] if c["status"] == "covered"]
+    assert len(demonstrated) >= 4, result["concept_summary"]
+    # whenever a strong session sits under a low state, the result must say why
+    if result["state"]["index"] <= 1:
+        note = result["state"]["note"]
+        assert note, "a strong session under a low state was left unexplained"
+        assert "recent sessions" in note
+    assert len(tdef["concepts"]) == len(result["concept_summary"])
+
+
+def test_a_takeaway_that_only_repeats_lecture_vocabulary_adds_nothing():
+    """"backpropagation gradient weight loss optimization" names the lecture's
+    topics without saying anything about them. It is stored and shown back to
+    the student, but it must not manufacture evidence."""
+    from app.nlp.analyzer import is_term_list
+
+    assert is_term_list("backpropagation gradient weight loss optimization")
+    assert is_term_list("markov hidden states observations transitions")
+    # ...while ordinary terse writing is not a term list
+    for real in ("text in quotes", "the first position is zero",
+                 "single letters in order", "split makes a list of pieces"):
+        assert not is_term_list(real), real
+
+
+@pytest.mark.skipif(not hmm_available(), reason="HMM not trained")
+def test_keyword_salad_takeaway_creates_no_evidence_end_to_end():
+    topics = client.get("/api/topics").json()
+    topic = next(t for t in topics if "Strings" in t["name"])
+    student = client.get("/api/students").json()[0]
+    start = client.post("/api/sessions/start",
+                        json={"student_id": student["id"], "topic_id": topic["id"]}).json()
+    sid = start["session_id"]
+    client.post(f"/api/sessions/{sid}/respond", json={"text": "i am not sure about this"})
+    result = client.post(f"/api/sessions/{sid}/finish", json={
+        "attention": 5, "confidence": 5, "difficulty": 5,
+        "summary": "strings indexing slicing characters assignment"}).json()
+    assert result["summary_insights"] in ({}, None) or \
+        not result["summary_insights"].get("new_concepts_demonstrated")
+    # the student still sees their own words back
+    progress = client.get(f"/api/students/{student['id']}/progress").json()
+    assert any("strings indexing slicing" in s["text"] for s in progress["summaries"])

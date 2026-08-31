@@ -419,6 +419,11 @@ export default function TeachBack({ user }) {
               <StateBadge label={result.state.label} size="lg" audience="student" />
               <p className="text-sm text-charcoal-light">{studentStateDescription(result.state.label)}</p>
             </div>
+            {result.state.note && (
+              <p className="mt-3 text-sm text-charcoal bg-sky-50 border border-sky-200 rounded-md p-3">
+                {result.state.note}
+              </p>
+            )}
             {result.previous_state_label && result.previous_state_label !== result.state.label && (
               <div className="mt-4 flex items-center gap-3 text-sm">
                 <span className="text-xs font-semibold text-charcoal-light uppercase tracking-wide">Learning journey</span>

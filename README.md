@@ -205,6 +205,42 @@ Student responses are evaluated **against that definition**.
   Relationship evidence accumulates across the conversation (it is *not* added to the HMM
   feature vector, so the trained artifact stays valid).
 
+### What counts as evidence (`analyzer.informative_terms` / `concept_evidence`)
+
+Every reference text is stored as `"Name: explanation"`, which gives short
+answers the context of the question — and, left unguarded, makes *saying the
+name* score higher than *explaining the idea*. A 170-answer audit
+(`scripts/student_audit.py`) found both failure directions coming from that one
+spot:
+
+| student answer | before | after |
+|---|---|---|
+| "python uses indexing" | credited as understanding Indexing (cosine 0.82) | no evidence |
+| "you use the number to get the letter" | no evidence (no shared words) | demonstrated |
+
+The fix is a rule, not a threshold — **no similarity bar was changed**. Before
+either score is trusted, the answer must say something *about* the concept:
+
+1. take the answer's content words;
+2. remove the concept's own name, the lecture title, the lecture's other
+   concept names, and a small closed set of evaluative/meta filler
+   ("useful", "was covered in class", "really");
+3. what remains is the evidence. Credit needs **two such words, or one that is
+   also one of the teacher's own key words** for that idea.
+
+Neither condition can be met by naming the concept, and a genuine paraphrase
+that avoids the jargon satisfies them easily. The same rule governs
+whole-response concept coverage, so naming a concept in passing cannot mark it
+demonstrated either. Two further guards came out of the same audit: an answer
+sitting closer to a taught wrong claim than to the concept itself has credit
+*withheld* (never an accusation — see `MISCONCEPTION_SHADOW`), and connective
+adverbs like "back" no longer count as evidence that a relationship was stated
+backwards.
+
+Measured effect (no thresholds touched), on the labelled set's held-out
+portion: evidence accuracy 0.782 → 0.862, misconception precision unchanged at
+1.000, relationship checks unchanged at 18/20.
+
 ### Guided conversation (`nlp/conversation.py`)
 
 A deterministic rule engine — not a language model — walks through the concepts one **short
@@ -515,6 +551,10 @@ python scripts/evaluate_nlp.py         # answer-evaluator metrics on the labelle
 python scripts/evaluate_nlp.py --tune  # threshold calibration sweep
 python scripts/simulate_user.py        # full faculty+student journey against the live API
                                        # (resets the demo DB; --keep to run in place)
+python scripts/student_audit.py        # 170-answer + 10-session student-understanding audit
+python scripts/verify_persistence.py   # SQLite is the source of truth; no orphaned rows
+python scripts/verify_ui.py            # headless-browser check of the real interface
+                                       # (needs the backend on :8000 and vite on :5173)
 ```
 
 ## 15. Faculty demo (~5 minutes)
@@ -636,6 +676,36 @@ students against the generator's true states:
 **The HMM was evaluated using synthetic student trajectories and should not be interpreted as
 validated real-world student prediction.**
 
+### Student-answer audit (`scripts/student_audit.py`)
+
+The labelled set is small and was partly used for calibration, so it cannot
+answer "would this work on real students?". The audit is a second, independent
+check: 170 deterministic answers built from hand-written per-concept phrasings
+plus meaning-preserving surface transformations (shorten, informalise, add
+filler, add a typo), deliberately avoiding the concept name in most correct
+answers, plus 10 complete conversation sessions with different student
+personalities and 20 free-form takeaways. It runs through the real pipeline —
+`analyze_response` + `targeted_concept_check` + the conversation engine's own
+verdict — and is **never used to tune anything**.
+
+Current result (seed 20260831, `data/nlp/student_simulation.json`):
+
+| measure | value |
+|---|---|
+| strict / evidence accuracy | 0.641 / 0.753 |
+| demonstrated precision / recall | 0.787 / 0.686 |
+| false credit on answers carrying no evidence | 0.133 |
+| ...on "I don't know" | 0.000 |
+| ...on unrelated answers | 0.000 |
+| correct answers in simple/terminology-free wording missed | 0.246 |
+| takeaways: never downgraded / no fabrication from a term list | yes / yes |
+
+The 10 sessions discriminate as they should: the concise, informal,
+different-terminology and relationship-fluent students demonstrate all six
+concepts; the uncertain and vague students demonstrate three; the
+overconfident-but-wrong and genuinely-struggling students demonstrate one. All
+stay inside the 12-question cap.
+
 ## 18. Known limitations
 
 The system estimates **evidence of conceptual understanding within a bounded, teacher-reviewed
@@ -686,6 +756,24 @@ happening in a student's mind.
   concepts. This trades recall for precision: genuine connections stated without such a cue
   ("Indexing. Characters. Both matter here.") are simply not suggested, and the teacher adds
   them in the review step or in an *Important Connections* section.
+- The evidence rule is lexical at its core: it asks whether the answer contains
+  words beyond the concept's own name, not whether those words mean the right
+  thing. "gradients are used in neural networks" still passes it (two real
+  content words) and is then judged on similarity alone. It removes the
+  clear-cut cases, not every empty answer.
+- Misconception RECALL stays low by design (precision is 1.000 on the labelled
+  set, recall ~0.55). In the audit only 1 of 5 misconception phrasings was
+  named as such; the rest had credit withheld rather than being flagged, which
+  is the intended conservative behaviour but means a teacher will not always be
+  told a misconception occurred.
+- Relationship recall on deliberately colloquial phrasing is poor (2 of 7 in the
+  audit) even though it is 11 of 12 on the labelled set. Prose that states a
+  connection without any of the teacher's vocabulary is usually read as "not
+  discussed" — an absence of evidence rather than a mistake, which is the safe
+  direction, but it does mean connections go unrecorded.
+- The audit's `upgrade_hit_rate` (0.091) is measured from a deliberately harsh
+  baseline — every concept starts at "partial" and only promotion to "covered"
+  counts — so it understates what takeaways contribute in a real session.
 - The **real** problematic Cloud Computing PDF was not present in this environment, so the
   regression suite reproduces its structure (running header/footer, slide numbers, per-slide
   copyright, a divider slide, a boilerplate-only slide, a legitimately repeated title) as a

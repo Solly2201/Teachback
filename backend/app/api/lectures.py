@@ -533,6 +533,31 @@ def lecture_history(db: Session, lec: Lecture) -> dict:
     return counts
 
 
+HISTORY_LABELS = [
+    ("sessions", "TeachBack session"),
+    ("quiz_attempts", "knowledge-check attempt"),
+    ("activity_completions", "completed activity"),
+    ("observations", "learning-state record"),
+]
+
+
+def history_summary(history: dict) -> str:
+    """Plain-English list of the record types that actually exist.
+
+    Listing every category including the empty ones produced a dialog that
+    said "students have already worked on this (0 sessions, 0 checks)" while
+    still archiving — true but incomprehensible. Only non-zero counts are
+    named, so the reason the lecture is being archived is the reason shown.
+    """
+    parts = [f"{history[key]} {label}{'' if history[key] == 1 else 's'}"
+             for key, label in HISTORY_LABELS if history.get(key)]
+    if not parts:
+        return "no student records"
+    if len(parts) == 1:
+        return parts[0]
+    return ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
 @router.get("/lectures/{lecture_id}/delete-preview")
 def delete_preview(lecture_id: int, db: Session = Depends(get_db)):
     """What deleting this lecture would do — for the confirmation dialog."""
@@ -546,15 +571,16 @@ def delete_preview(lecture_id: int, db: Session = Depends(get_db)):
         "title": lec.title,
         "status": lec.status,
         "history": history,
+        "history_summary": history_summary(history),
         "mode": mode,
         "message": (
-            f'Delete "{lec.title}"? Students have already worked on this lecture '
-            f'({history["sessions"]} TeachBack session(s), {history["quiz_attempts"]} knowledge '
-            "check(s)). It will be archived instead of erased: it disappears from your active "
-            "lectures and no new sessions can start, but every student record stays intact."
+            f'"{lec.title}" already has student learning records '
+            f"({history_summary(history)}). It will be ARCHIVED rather than erased: it "
+            "disappears from your active lectures and no new TeachBack can start on it, "
+            "while every one of those records stays intact and readable."
             if mode == "archive" else
             f'Delete "{lec.title}"? This removes the lecture and its TeachBack configuration. '
-            "No student has used it, so no learning record is affected."
+            "No student has worked on it, so no learning record is affected."
         ),
     }
 
@@ -577,10 +603,10 @@ def delete_lecture(lecture_id: int, db: Session = Depends(get_db)):
         db.commit()
         return {
             "mode": "archived", "lecture_id": lecture_id, "title": title,
-            "history": history,
-            "message": (f'"{title}" was archived. Student sessions, knowledge-check attempts '
-                        "and progress records are unchanged and still visible in student "
-                        "history; the lecture no longer appears in your active list."),
+            "history": history, "history_summary": history_summary(history),
+            "message": (f'"{title}" was archived, not erased. Its {history_summary(history)} '
+                        "remain intact and still show in student history; the lecture no "
+                        "longer appears in your active list and cannot start new sessions."),
         }
 
     # nothing to preserve: remove the lecture and the topic it owns
@@ -592,6 +618,7 @@ def delete_lecture(lecture_id: int, db: Session = Depends(get_db)):
     db.delete(lec)
     db.commit()
     return {"mode": "deleted", "lecture_id": lecture_id, "title": title, "history": history,
+            "history_summary": history_summary(history),
             "message": f'"{title}" was deleted. No student records were affected.'}
 
 

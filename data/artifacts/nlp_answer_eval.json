@@ -1,24 +1,24 @@
 {
   "calibration": {
     "n_items": 174,
-    "strict_accuracy": 0.69,
-    "evidence_accuracy": 0.856,
+    "strict_accuracy": 0.672,
+    "evidence_accuracy": 0.862,
     "per_label": {
       "strong": {
-        "precision": 0.726,
-        "recall": 0.772,
-        "f1": 0.748,
+        "precision": 0.724,
+        "recall": 0.797,
+        "f1": 0.759,
         "support": 79
       },
       "partial": {
-        "precision": 0.448,
-        "recall": 0.333,
-        "f1": 0.382,
+        "precision": 0.323,
+        "recall": 0.256,
+        "f1": 0.286,
         "support": 39
       },
       "unclear": {
-        "precision": 0.727,
-        "recall": 0.889,
+        "precision": 0.76,
+        "recall": 0.844,
         "f1": 0.8,
         "support": 45
       },
@@ -37,26 +37,26 @@
     ],
     "confusion_matrix": [
       [
-        61,
-        10,
-        8,
-        0
-      ],
-      [
-        19,
+        63,
         13,
-        7,
-        0
-      ],
-      [
-        1,
-        4,
-        40,
-        0
-      ],
-      [
         3,
+        0
+      ],
+      [
+        20,
+        10,
+        9,
+        0
+      ],
+      [
         2,
+        5,
+        38,
+        0
+      ],
+      [
+        2,
+        3,
         0,
         6
       ]
@@ -75,11 +75,11 @@
         "n": 1
       },
       "confirmation": {
-        "accuracy": 1.0,
+        "accuracy": 0.667,
         "n": 3
       },
       "different_terms": {
-        "accuracy": 0.818,
+        "accuracy": 0.909,
         "n": 11
       },
       "dont_know": {
@@ -95,7 +95,7 @@
         "n": 11
       },
       "irrelevant": {
-        "accuracy": 0.909,
+        "accuracy": 0.818,
         "n": 11
       },
       "misconception": {
@@ -111,7 +111,7 @@
         "n": 9
       },
       "partial_fact": {
-        "accuracy": 0.6,
+        "accuracy": 1.0,
         "n": 5
       },
       "pdf_artifact": {
@@ -127,11 +127,11 @@
         "n": 3
       },
       "short": {
-        "accuracy": 0.917,
+        "accuracy": 0.75,
         "n": 24
       },
       "simple": {
-        "accuracy": 0.875,
+        "accuracy": 1.0,
         "n": 24
       },
       "textbook": {
@@ -139,19 +139,19 @@
         "n": 10
       },
       "vague": {
-        "accuracy": 0.667,
+        "accuracy": 0.833,
         "n": 12
       },
       "wrong_but_unlisted": {
-        "accuracy": 1.0,
+        "accuracy": 0.0,
         "n": 1
       }
     }
   },
   "heldout": {
     "n_items": 87,
-    "strict_accuracy": 0.621,
-    "evidence_accuracy": 0.782,
+    "strict_accuracy": 0.644,
+    "evidence_accuracy": 0.862,
     "per_label": {
       "strong": {
         "precision": 0.767,
@@ -160,15 +160,15 @@
         "support": 45
       },
       "partial": {
-        "precision": 0.231,
-        "recall": 0.167,
-        "f1": 0.194,
+        "precision": 0.222,
+        "recall": 0.222,
+        "f1": 0.222,
         "support": 18
       },
       "unclear": {
-        "precision": 0.519,
-        "recall": 0.824,
-        "f1": 0.636,
+        "precision": 0.682,
+        "recall": 0.882,
+        "f1": 0.769,
         "support": 17
       },
       "misconception": {
@@ -187,25 +187,25 @@
     "confusion_matrix": [
       [
         33,
-        6,
-        6,
-        0
-      ],
-      [
-        8,
+        9,
         3,
-        7,
         0
       ],
       [
-        1,
-        2,
-        14,
+        10,
+        4,
+        4,
         0
       ],
       [
-        1,
+        0,
         2,
+        15,
+        0
+      ],
+      [
+        0,
+        3,
         0,
         4
       ]
@@ -228,7 +228,7 @@
         "n": 1
       },
       "different_terms": {
-        "accuracy": 0.5,
+        "accuracy": 1.0,
         "n": 2
       },
       "dont_know": {
@@ -256,11 +256,11 @@
         "n": 9
       },
       "paraphrase": {
-        "accuracy": 0.818,
+        "accuracy": 1.0,
         "n": 11
       },
       "partial_fact": {
-        "accuracy": 0.8,
+        "accuracy": 1.0,
         "n": 5
       },
       "pdf_artifact": {
@@ -272,11 +272,11 @@
         "n": 1
       },
       "short": {
-        "accuracy": 0.429,
+        "accuracy": 0.714,
         "n": 7
       },
       "simple": {
-        "accuracy": 0.923,
+        "accuracy": 1.0,
         "n": 13
       },
       "textbook": {
@@ -298,31 +298,10 @@
       "pred": "partial"
     },
     {
-      "topic": "backprop",
-      "concept": "Loss / error",
-      "text": "You compare the guess with the right answer.",
+      "topic": "strings",
+      "concept": "split() and join()",
+      "text": "they are string methods",
       "truth": "partial",
-      "pred": "unclear"
-    },
-    {
-      "topic": "backprop",
-      "concept": "Gradient",
-      "text": "it's a slope",
-      "truth": "partial",
-      "pred": "unclear"
-    },
-    {
-      "topic": "backprop",
-      "concept": "Backward propagation of error",
-      "text": "The mistake info travels from the output back towards the input.",
-      "truth": "strong",
-      "pred": "unclear"
-    },
-    {
-      "topic": "backprop",
-      "concept": "Weight update",
-      "text": "you adjust the knobs slightly so next time it's less wrong",
-      "truth": "strong",
       "pred": "unclear"
     },
     {
@@ -333,32 +312,11 @@
       "pred": "unclear"
     },
     {
-      "topic": "hmm",
-      "concept": "Hidden states",
-      "text": "There's a real situation underneath that you never get to see.",
-      "truth": "strong",
-      "pred": "unclear"
-    },
-    {
-      "topic": "hmm",
-      "concept": "Transition probabilities",
-      "text": "how likely it switches",
-      "truth": "partial",
-      "pred": "unclear"
-    },
-    {
       "topic": "strings",
       "concept": "Indexing",
       "text": "The first letter is number one, the second is two, and so on.",
       "truth": "misconception",
       "pred": "partial"
-    },
-    {
-      "topic": "strings",
-      "concept": "Slicing",
-      "text": "the stop number itself is left out",
-      "truth": "partial",
-      "pred": "unclear"
     },
     {
       "topic": "backprop",
@@ -414,14 +372,7 @@
       "concept": "Hidden states",
       "text": "you can just read the states straight off the data",
       "truth": "misconception",
-      "pred": "strong"
-    },
-    {
-      "topic": "strings",
-      "concept": "Strings",
-      "text": "strings are useful in python",
-      "truth": "unclear",
-      "pred": "strong"
+      "pred": "partial"
     }
   ],
   "relationships": {

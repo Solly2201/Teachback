@@ -77,7 +77,8 @@ def analyze_item(item: dict, tdef: dict) -> dict:
         analysis = analyze_response(item["text"], tdef)
         concept = next(c for c in tdef["concepts"] if c["name"] == item["concept"])
         analysis["target_check"] = targeted_concept_check(
-            item["text"], concept, topic_name=tdef.get("name", ""))
+            item["text"], concept, topic_name=tdef.get("name", ""),
+            misconceptions=tdef.get("misconceptions"))
         _analysis_cache[key] = analysis
     return _analysis_cache[key]
 

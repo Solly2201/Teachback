@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..hmm.model import hmm_available, infer_sequence
 from ..models import Observation, Quiz, Response, Student, TeachSession, Topic
-from ..nlp.analyzer import analyze_response, merge_session_analyses, targeted_concept_check
+from ..nlp.analyzer import (analyze_response, is_term_list,
+                            merge_session_analyses, targeted_concept_check)
 from ..nlp.conversation import (MAX_QUESTIONS, _update_relationships, build_plan,
                                 first_question, play_turn, timeline_out)
 from ..recommend.rules import recommend
@@ -122,7 +123,8 @@ def respond(session_id: int, data: RespondIn, db: Session = Depends(get_db)):
         )
         if cdef:
             analysis["target_check"] = targeted_concept_check(
-                data.text, cdef, topic_name=tdef.get("name", ""))
+                data.text, cdef, topic_name=tdef.get("name", ""),
+                misconceptions=tdef.get("misconceptions"))
 
     prev = session.responses[-1].analysis.get("turn", {}).get("followup") if session.responses else None
     prompt = (prev or {}).get("text") or (first_question(plan, tdef)["text"])
@@ -221,7 +223,11 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
     summary_text = (data.summary or "").strip()
     summary_insights: dict = {}
     summary_analysis = None
-    if summary_text:
+    # A takeaway that is a bare list of the lecture's own terms
+    # ("backpropagation gradient weight loss optimization") repeats vocabulary
+    # without saying anything, and must not manufacture evidence. It is still
+    # stored and shown back to the student — it just adds nothing.
+    if summary_text and not is_term_list(summary_text):
         summary_analysis = analyze_response(summary_text, tdef)
         upgraded, mentioned = _apply_summary_to_plan(plan, summary_analysis)
         summary_insights = {
@@ -361,6 +367,25 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
     # confidence/difficulty are separate observations, never a state: they
     # only steer WHICH activity style is recommended (see recommend/rules.py)
     understanding_evidence = len(demonstrated) / len(concept_summary) if concept_summary else 0.0
+
+    # The learning state is a reading of the student's WHOLE history (Viterbi
+    # over every session), so one strong session after a weak run does not
+    # flip it — that is the point of using an HMM. Shown next to "you
+    # demonstrated 6 of 6 concepts" it reads as a contradiction, so say
+    # plainly which question each number answers.
+    state_index = inference["current_state"]
+    state_note = ""
+    if concept_summary:
+        if understanding_evidence >= 0.7 and state_index <= 1:
+            state_note = (
+                f"This session went well — you demonstrated {len(demonstrated)} of "
+                f"{len(concept_summary)} concepts. The learning condition above reads your "
+                "recent sessions together rather than this one alone, so it moves gradually; "
+                "another session like this one will shift it.")
+        elif understanding_evidence <= 0.3 and state_index >= 3:
+            state_note = (
+                "This session showed less than usual. The learning condition above reflects "
+                "your recent sessions together, so one quieter session does not undo them.")
     rec = recommend(
         inference["current_state"], tdef["activities"], unresolved,
         evidence={
@@ -438,6 +463,9 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
             "posterior_meaning": ("Model confidence in the current learning condition, "
                                   "given this student's session history — not a probability "
                                   "of understanding."),
+            # reconciles "you demonstrated everything" with a state that reads
+            # the whole trajectory; empty when the two already agree
+            "note": state_note,
         },
         "timeline": [observation_out(o) for o in history[-10:]],
         "recommendation": rec,

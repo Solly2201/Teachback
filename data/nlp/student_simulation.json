@@ -1,0 +1,1858 @@
+{
+  "description": "Deterministic audit of how TeachBack interprets ordinary student answers. Generated from hand-written per-concept phrasings plus meaning-preserving surface transformations, with a fixed seed. This is an AUDIT set: it is never used to tune thresholds.",
+  "seed": 20260831,
+  "cases": [
+    {
+      "topic": "backprop",
+      "concept": "Backward propagation of error",
+      "text": "the error starts at the output and travesl back through the layers",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Backward propagation of error",
+      "text": "backpropagation is the toipc",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Backward propagation of error",
+      "text": "it works by changing the input data until the asnwer is right",
+      "category": "misconception",
+      "gold": "misconception",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Backward propagation of error",
+      "text": "something moves backwards",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Backward propagation of error",
+      "text": "the error travels backwards",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Backward propagation of error",
+      "text": "it goes back through the network to see what caused the mistake",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "it's like feeling which way is downhill when u cant see",
+      "category": "analogy",
+      "gold": "partial",
+      "transforms": [
+        "informalise"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "it tells you how the error changes when you nudge one weight a little",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "gradients are used in neural networks",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "the gradient changes the weights all by itself without an optimizer",
+      "category": "misconception",
+      "gold": "misconception",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "it's a slope",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "it's a slope of the reror",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "it says which way to push each number to get less wrong",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Loss / error",
+      "text": "kind of it's like the distance between where the dart landed and the bullseye right?",
+      "category": "analogy",
+      "gold": "partial",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Loss / error",
+      "text": "it measures how rwong the guess was",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Loss / error",
+      "text": "loss is part of backpropagation",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Loss / error",
+      "text": "you compare the guess with the right answer",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Loss / error",
+      "text": "how wrong the guess was",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Loss / error",
+      "text": "a score for how badly it got the answer wrong",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Optimization / iteration",
+      "text": "it's like practising free throws until you stop missing",
+      "category": "analogy",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Optimization / iteration",
+      "text": "it happens over and over, improving a bit each round",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Optimization / iteration",
+      "text": "training takes a while",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Optimization / iteration",
+      "text": "it happens more than once",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Optimization / iteration",
+      "text": "it repeats many times",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Optimization / iteration",
+      "text": "you keep doing it again and again until it stops being wrong",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Weight update",
+      "text": "the optimizer nudges the weights a little bit using the learning rate",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Weight update",
+      "text": "weights mattre here",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Weight update",
+      "text": "the weights get cahnged",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Weight update",
+      "text": "the weights cahnge a little",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Weight update",
+      "text": "you adjust the knobs slightly so next time it is less wrong",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Hidden states",
+      "text": "like guessing someones' mood from the messages they send",
+      "category": "analogy",
+      "gold": "partial",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Hidden states",
+      "text": "there is a real situation underneath that you never observe idrectly",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Hidden states",
+      "text": "ihdden markov models have states",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Hidden states",
+      "text": "you can just read the states straight off the data",
+      "category": "misconception",
+      "gold": "misconception",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Hidden states",
+      "text": "something is hidden",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Hidden states",
+      "text": "the real situation you cannot see",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Hidden states",
+      "text": "you can't see whats' really going on, you only see the clues",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "what comes next depends on where you are now, not on how you got tehre",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "basically markvo is in the name i think",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": [
+        "add_typo",
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "the next satte depends on everything that happened before it",
+      "category": "misconception",
+      "gold": "misconception",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "it forgest the past",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "only the present mattesr",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "it only cares about right now, not everything before",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Observations / emissions",
+      "text": "each hidden state gives off visible outputs with certain probabilities",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Observations / emissions",
+      "text": "umbrellas are what you see, the weather is what you don't",
+      "category": "example",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Observations / emissions",
+      "text": "emissions were on the slide",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Observations / emissions",
+      "text": "you see some outputs",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Observations / emissions",
+      "text": "what you can actually see",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Observations / emissions",
+      "text": "the stuff you can actually notice that depends on the situation",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "given the observations you figure out which states were most likely",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "like viterbi was mentioned or something",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "there is an algorithm for it",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "you infer the likely states",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "you guess backwards what was probably going on from the clues",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Transition probabilities",
+      "text": "they say how likely you are to move from one situation to another i think",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Transition probabilities",
+      "text": "probabilities are involved",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Transition probabilities",
+      "text": "there are some probabiliteis",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Transition probabilities",
+      "text": "how likely it switches",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Transition probabilities",
+      "text": "kind of how likely it is to change from one thing to the next i think",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Generalisation gap",
+      "text": "training accuracy is high while test accuracy is much lower",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Generalisation gap",
+      "text": "there is a gap",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Generalisation gap",
+      "text": "there is a difference between the two scores",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Generalisation gap",
+      "text": "good on training bad on new data",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "drop_punctuation"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Generalisation gap",
+      "text": "great on the stuff it has seen bad on anything new",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "drop_punctuation"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "models with lots of parameters can bend to fit anything, so they overfit more",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "complexity matters",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "complex mdoels are risky",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "more parameters means more overfitting",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "if it has too many knobs it can twist itself around every point",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Overfitting",
+      "text": "like a student who memorises past papers but cannot do a new question",
+      "category": "analogy",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Overfitting",
+      "text": "basically the model learns the training examples too closely including the noise",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Overfitting",
+      "text": "overfitting is bad",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Overfitting",
+      "text": "it learns too much",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Overfitting",
+      "text": "kind of it memorises the training data",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Overfitting",
+      "text": "it just remembers the practice questions isntead of learning",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Regularization penalty",
+      "text": "an extra cost on big weights discourages the model from getting too complex",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Regularization penalty",
+      "text": "l1 and l2 exsit",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Regularization penalty",
+      "text": "htere is a penalty term",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Regularization penalty",
+      "text": "a penalty on big weights",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Regularization penalty",
+      "text": "you charge it for using big numbers so it keeps things simple",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Validation-based control",
+      "text": "you watch performance on held-out data and stop when it stops improving",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Validation-based control",
+      "text": "dropout was mentioned",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Validation-based control",
+      "text": "you use a validatino set",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Validation-based control",
+      "text": "you stop aerly using held-out data",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Validation-based control",
+      "text": "u keep some questions aside to check when to stop",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "informalise"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Characters",
+      "text": "it's like baeds on a thread each bead is one letter",
+      "category": "analogy",
+      "gold": "partial",
+      "transforms": [
+        "drop_punctuation",
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Characters",
+      "text": "it's a sequence of individual letters one atfer another",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Characters",
+      "text": "characters were mentioned in class",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Characters",
+      "text": "it has letters in it",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Characters",
+      "text": "single lettres in order",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Characters",
+      "text": "it's built out of the separate letters that sit in order",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "it's like seat numbers, you ask for seat 0 and get the first person",
+      "category": "analogy",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "each letter has a position n you use that position to reach it",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "informalise"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "basically like s[0] gives you the P in Python",
+      "category": "example",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "indexing is important in python",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "the first letter is number one and the second is number two",
+      "category": "misconception",
+      "gold": "misconception",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "you use square brackets",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "position zero is the ifrst one",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "kind of you use the number to get the letter",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Slicing",
+      "text": "it's like cutting a slice out of a loaf of bread",
+      "category": "analogy",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Slicing",
+      "text": "you take a part of the text between a start and an end position",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Slicing",
+      "text": "like like s[0:3] on Python gives you Pyt",
+      "category": "example",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Slicing",
+      "text": "slicing was covered today",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Slicing",
+      "text": "the end number is left out",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Slicing",
+      "text": "it takes part of the text",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Slicing",
+      "text": "you can cut out a piece of the owrds from here to there right?",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo",
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "like giving the text a name lets you reuse it",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "like name = \"Python\" and then you use name",
+      "category": "example",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "assignment was in the lecture",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "you store it somewhere",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "you stoer it under a name",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "you put it in a box with a name and use the name after that",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Strings",
+      "text": "it's like a sentence written on a label",
+      "category": "analogy",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Strings",
+      "text": "a string is text stored between quotes",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Strings",
+      "text": "like when you write \"Hello\" with the quotes around it",
+      "category": "example",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Strings",
+      "text": "strings come up a lot in python",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Strings",
+      "text": "something that holds letters",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Strings",
+      "text": "um text in quotes",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Strings",
+      "text": "it's basically words you put inside speech marks",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "split() and join()",
+      "text": "split breaks the text into a list of pieces n join sticks them back together",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "informalise"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "split() and join()",
+      "text": "like \"a,b,c\" split on the comma gives you a, b and c esparately",
+      "category": "example",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "split() and join()",
+      "text": "we did string methdos",
+      "category": "keyword_only",
+      "gold": "insufficient",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "split() and join()",
+      "text": "they cut and paste text i think",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "split() and join()",
+      "text": "split makes a list of pieces",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "split() and join()",
+      "text": "you can chop it up into separate bits, or stick the bits back",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Transition probabilities",
+      "text": "yeah",
+      "category": "confirmation",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Weight update",
+      "text": "yes",
+      "category": "confirmation",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Observations / emissions",
+      "text": "i think so",
+      "category": "confirmation",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Strings",
+      "text": "correct",
+      "category": "confirmation",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "yep exactly",
+      "category": "confirmation",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Transition probabilities",
+      "text": "right",
+      "category": "confirmation",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "i don't know",
+      "category": "dont_know",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "no idea sorry",
+      "category": "dont_know",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Observations / emissions",
+      "text": "not sure about this one",
+      "category": "dont_know",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "idk",
+      "category": "dont_know",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "i forgot",
+      "category": "dont_know",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "i don't really remember this one",
+      "category": "dont_know",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "can't remember",
+      "category": "dont_know",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Regularization penalty",
+      "text": "the canteen was closed today",
+      "category": "unrelated",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "we also talked about the sports day schedule",
+      "category": "unrelated",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "python is a programming language",
+      "category": "unrelated",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "the lecture was quite fast today",
+      "category": "unrelated",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "i liked the slides",
+      "category": "unrelated",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "can we get the notes by email",
+      "category": "unrelated",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Slicing",
+      "text": "maybe it means the position?",
+      "category": "vague_noise",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Backward propagation of error",
+      "text": "i remember something about zero",
+      "category": "vague_noise",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "it's basically text",
+      "category": "vague_noise",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "not really sure",
+      "category": "vague_noise",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "strings",
+      "concept": "Characters",
+      "text": "something to do with the lecture",
+      "category": "vague_noise",
+      "gold": "insufficient",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "basically the more flexible the model, the easier it is for it to emmorise",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler",
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "like s[0] gives you the P in Python",
+      "category": "example",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "complex models are risky",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Transition probabilities",
+      "text": "there are some proabbilities",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "it forgets the past",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Backward propagation of error",
+      "text": "the mistake signal is passed backwards layer by layer using the chain rule",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "State inference / decoding",
+      "text": "you guess backwards what was probalby going on from the clues",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "like name = \"Pytohn\" and then you use name",
+      "category": "example",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "split() and join()",
+      "text": "one cuts a sentence into parts, the other glues the parts into one string",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "backprop",
+      "concept": "Optimization / iteration",
+      "text": "it happens over and oevr, improving a bit each round",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "only the present amtters",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "hmm",
+      "concept": "Markov property",
+      "text": "only the present mtaters",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Gradient",
+      "text": "it says which way to push each nubmer to get less wrong",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "u save the text in a variable so you can use it later",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "informalise"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Characters",
+      "text": "single letters in order",
+      "category": "short",
+      "gold": "demonstrated",
+      "transforms": []
+    },
+    {
+      "topic": "hmm",
+      "concept": "Hidden states",
+      "text": "basically the actual state is hidden n u only see what it produces",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler",
+        "informalise"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Weight update",
+      "text": "kind of the optimizer nudges the weights a little bit using the learning rate",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "String assignment",
+      "text": "you put it in a box with a name and use the name aftre that",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "backprop",
+      "concept": "Optimization / iteration",
+      "text": "um it happens more than once i think",
+      "category": "partial",
+      "gold": "partial",
+      "transforms": [
+        "add_filler"
+      ]
+    },
+    {
+      "topic": "strings",
+      "concept": "Indexing",
+      "text": "you use the number to get the letetr",
+      "category": "terminology_free",
+      "gold": "demonstrated",
+      "transforms": [
+        "add_typo"
+      ]
+    },
+    {
+      "topic": "overfitting",
+      "concept": "Model complexity",
+      "text": "the more flexible the model, the easier it is for it to memorise",
+      "category": "correct",
+      "gold": "demonstrated",
+      "transforms": []
+    }
+  ],
+  "metrics": {
+    "n": 170,
+    "strict_accuracy": 0.641,
+    "evidence_accuracy": 0.753,
+    "per_label": {
+      "demonstrated": {
+        "precision": 0.787,
+        "recall": 0.686,
+        "f1": 0.733,
+        "support": 86
+      },
+      "partial": {
+        "precision": 0.444,
+        "recall": 0.353,
+        "f1": 0.393,
+        "support": 34
+      },
+      "insufficient": {
+        "precision": 0.569,
+        "recall": 0.822,
+        "f1": 0.673,
+        "support": 45
+      },
+      "misconception": {
+        "precision": 0.333,
+        "recall": 0.2,
+        "f1": 0.25,
+        "support": 5
+      }
+    },
+    "confusion_labels": [
+      "demonstrated",
+      "partial",
+      "insufficient",
+      "misconception"
+    ],
+    "confusion_matrix": [
+      [
+        59,
+        10,
+        15,
+        2
+      ],
+      [
+        9,
+        12,
+        13,
+        0
+      ],
+      [
+        6,
+        2,
+        37,
+        0
+      ],
+      [
+        1,
+        3,
+        0,
+        1
+      ]
+    ],
+    "per_category": {
+      "analogy": {
+        "accuracy": 0.667,
+        "n": 9
+      },
+      "confirmation": {
+        "accuracy": 1.0,
+        "n": 6
+      },
+      "correct": {
+        "accuracy": 0.931,
+        "n": 29
+      },
+      "dont_know": {
+        "accuracy": 1.0,
+        "n": 7
+      },
+      "example": {
+        "accuracy": 0.625,
+        "n": 8
+      },
+      "keyword_only": {
+        "accuracy": 0.762,
+        "n": 21
+      },
+      "misconception": {
+        "accuracy": 0.2,
+        "n": 5
+      },
+      "partial": {
+        "accuracy": 0.6,
+        "n": 25
+      },
+      "short": {
+        "accuracy": 0.792,
+        "n": 24
+      },
+      "terminology_free": {
+        "accuracy": 0.72,
+        "n": 25
+      },
+      "unrelated": {
+        "accuracy": 0.833,
+        "n": 6
+      },
+      "vague_noise": {
+        "accuracy": 0.6,
+        "n": 5
+      }
+    },
+    "false_credit_rate_no_evidence": 0.133,
+    "false_credit_rate_dont_know": 0.0,
+    "false_credit_rate_unrelated": 0.0,
+    "missed_rate_simple_language": 0.246
+  },
+  "relationships": {
+    "n": 12,
+    "ok": 6,
+    "by_expectation": {
+      "demonstrated": {
+        "ok": 2,
+        "n": 7
+      },
+      "not_shown": {
+        "ok": 3,
+        "n": 3
+      },
+      "contradicted": {
+        "ok": 1,
+        "n": 2
+      }
+    }
+  },
+  "takeaways": {
+    "n": 20,
+    "never_downgraded": true,
+    "no_fabrication_from_keyword_salad": true,
+    "upgrade_hit_rate": 0.091
+  },
+  "sessions": [
+    {
+      "persona": "A concise but knowledgeable",
+      "student": "Aarav Shah",
+      "turns": 8,
+      "questions_asked": 8,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings",
+        "String assignment",
+        "Characters",
+        "Indexing",
+        "Slicing",
+        "split() and join()"
+      ],
+      "needs_clarification": [],
+      "not_discussed": [],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Unclear",
+      "student_state": "Still Unclear"
+    },
+    {
+      "persona": "B informal",
+      "student": "Diya Patel",
+      "turns": 8,
+      "questions_asked": 8,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings",
+        "String assignment",
+        "Characters",
+        "Indexing",
+        "Slicing",
+        "split() and join()"
+      ],
+      "needs_clarification": [],
+      "not_discussed": [],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Unclear",
+      "student_state": "Still Unclear"
+    },
+    {
+      "persona": "C uncertain",
+      "student": "Kabir Mehta",
+      "turns": 12,
+      "questions_asked": 12,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings",
+        "String assignment",
+        "Slicing"
+      ],
+      "needs_clarification": [
+        "Characters",
+        "Indexing",
+        "split() and join()"
+      ],
+      "not_discussed": [],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Not Trying",
+      "student_state": "Very Little Evidence Yet"
+    },
+    {
+      "persona": "D different terminology",
+      "student": "Ishita Rao",
+      "turns": 8,
+      "questions_asked": 8,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings",
+        "String assignment",
+        "Characters",
+        "Indexing",
+        "Slicing",
+        "split() and join()"
+      ],
+      "needs_clarification": [],
+      "not_discussed": [],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Unclear",
+      "student_state": "Still Unclear"
+    },
+    {
+      "persona": "E misconception then correction",
+      "student": "Rohan Nair",
+      "turns": 9,
+      "questions_asked": 9,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings",
+        "String assignment",
+        "Characters",
+        "Slicing",
+        "split() and join()"
+      ],
+      "needs_clarification": [
+        "Indexing"
+      ],
+      "not_discussed": [],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Unclear",
+      "student_state": "Still Unclear"
+    },
+    {
+      "persona": "F vague",
+      "student": "Ananya Iyer",
+      "turns": 12,
+      "questions_asked": 12,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings",
+        "String assignment",
+        "Slicing"
+      ],
+      "needs_clarification": [
+        "Characters",
+        "Indexing",
+        "split() and join()"
+      ],
+      "not_discussed": [],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Not Trying",
+      "student_state": "Very Little Evidence Yet"
+    },
+    {
+      "persona": "G example-driven",
+      "student": "Vivaan Desai",
+      "turns": 9,
+      "questions_asked": 9,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings",
+        "Characters",
+        "Indexing",
+        "Slicing",
+        "split() and join()"
+      ],
+      "needs_clarification": [
+        "String assignment"
+      ],
+      "not_discussed": [],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Unclear",
+      "student_state": "Still Unclear"
+    },
+    {
+      "persona": "H overconfident but wrong",
+      "student": "Sara Kulkarni",
+      "turns": 12,
+      "questions_asked": 12,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings"
+      ],
+      "needs_clarification": [
+        "String assignment",
+        "Characters",
+        "Indexing",
+        "Slicing"
+      ],
+      "not_discussed": [
+        "split() and join()"
+      ],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Unclear",
+      "student_state": "Still Unclear"
+    },
+    {
+      "persona": "I relationships not terminology",
+      "student": "Shreshtha Bindal",
+      "turns": 8,
+      "questions_asked": 8,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings",
+        "String assignment",
+        "Characters",
+        "Indexing",
+        "Slicing",
+        "split() and join()"
+      ],
+      "needs_clarification": [],
+      "not_discussed": [],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Unclear",
+      "student_state": "Still Unclear"
+    },
+    {
+      "persona": "J genuinely struggling",
+      "student": "Student 09",
+      "turns": 12,
+      "questions_asked": 12,
+      "within_cap": true,
+      "demonstrated": [
+        "Strings"
+      ],
+      "needs_clarification": [
+        "String assignment",
+        "Characters",
+        "Indexing",
+        "Slicing"
+      ],
+      "not_discussed": [
+        "split() and join()"
+      ],
+      "misconceptions_open": [],
+      "misconceptions_resolved": [],
+      "state": "Not Trying",
+      "student_state": "Very Little Evidence Yet"
+    }
+  ]
+}

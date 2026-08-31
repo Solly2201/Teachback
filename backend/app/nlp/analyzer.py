@@ -46,6 +46,15 @@ FACT_MATCH_T = 0.60        # a specific lecture fact counts as mentioned
 FACT_LEX_T = 0.30          # ...or this similarity plus a shared content word
 MISCONCEPTION_T = 0.65     # minimum similarity to the wrong claim to flag it
 MISCONCEPTION_MARGIN = 0.08  # must beat similarity to the correction by this
+# An answer can be clearly closer to a known wrong claim than to the concept's
+# own explanation without meeting the (deliberately strict) bar for accusing
+# the student of holding that misconception. Full credit is withheld in that
+# case — "not enough evidence yet", never "you are wrong".
+MISCONCEPTION_SHADOW = 0.10
+# How many informative words an answer must carry before a prefix-inflated
+# similarity is trusted on its own. One word is a fragment, not an
+# explanation — unless that word is one of the teacher's own key terms.
+MIN_EVIDENCE_TERMS = 2
 
 # Concept relationships. A relationship has THREE meaningful outcomes, and the
 # difference between them is the difference between "no evidence" and "wrong":
@@ -79,6 +88,10 @@ RELATIONSHIP_LINK_T = 0.55   # weaker match, demonstrated only with endpoint evi
 RELATIONSHIP_ABOUT_T = 0.60  # sentence is on-topic enough to be an attempt at the link
 RELATIONSHIP_ENDPOINT_T = 0.56  # endpoint evidence inside the same sentence
 NEGATION_WINDOW = 3          # tokens after a negation that count as negated
+# Words that are too weak to prove a relationship was stated backwards. They
+# are ordinary connective adverbs, not the substance of any connection.
+_WEAK_CUES = {"back", "again", "then", "still", "just", "also", "here", "there",
+              "now", "well", "even", "much", "many", "some", "any", "way", "ways"}
 
 _STOPWORDS = set(
     """a an the and or but if then else of in on at to for from by with about as is are was
@@ -119,6 +132,97 @@ def content_words(text: str) -> list[str]:
 def _word_match(a: str, b: str) -> bool:
     """Loose inflection-tolerant match: 'increase'/'increases'/'increasing'."""
     return a == b or (len(a) >= 5 and len(b) >= 5 and a[:5] == b[:5])
+
+
+# Words that carry no information ABOUT a concept: evaluative verdicts on it,
+# and talk about the lecture rather than the idea. Deliberately small and
+# closed — it exists to catch "X is important" / "X was covered today", not to
+# blacklist subject vocabulary.
+_VACUOUS_TERMS = {
+    "bad", "good", "important", "useful", "useless", "interesting", "boring",
+    "confusing", "hard", "easy", "difficult", "nice", "great", "fine", "okay",
+    "mentioned", "covered", "discussed", "taught", "exists", "exist",
+    "matters", "matter", "involved", "related", "lecture", "class", "today",
+    "yesterday", "slide", "slides", "notes", "chapter", "topic", "subject",
+    "called", "part", "thing", "things", "stuff", "something", "anything",
+    "used", "uses", "use", "using", "lot", "here", "there", "name", "sure",
+    "know", "remember", "forgot", "idea", "guess", "maybe", "think",
+    # bare agreement and evaluation
+    "yep", "yeah", "yup", "exactly", "okay", "alright", "love", "hate",
+    "enjoy", "enjoyed", "like", "liked", "course", "general", "generally",
+    "overall", "many", "popular",
+    # intensifiers and hedges
+    "really", "very", "quite", "pretty", "actually", "essentially", "simply",
+    "totally", "definitely", "probably", "obviously", "sort", "kind",
+}
+
+
+def is_term_list(text: str) -> bool:
+    """True for a bare list of terms rather than a statement.
+
+    Any real English clause of four or more words contains at least one
+    function word ("text IN quotes", "the first position IS zero"). A takeaway
+    like "backpropagation gradient weight loss optimization" has none: it names
+    the lecture's topics without saying anything about them.
+
+    Used only for the free-form takeaway summary — a per-question ANSWER may
+    legitimately be a terse noun phrase ("square brackets pick one letter"),
+    so applying this there would reject real explanations.
+    """
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z\-']*", text.lower())
+    return len(tokens) >= 4 and not any(t in _STOPWORDS for t in tokens)
+
+
+def concept_evidence(text: str, concept: dict, topic_name: str = "",
+                     sibling_names: list[str] | None = None) -> dict:
+    """How much the answer says about ONE concept.
+
+    Two independent signals, neither of which naming the concept can satisfy:
+    the informative words (name, lecture title and filler removed), and how
+    many of those land on the teacher's own explanatory vocabulary. Shared by
+    the whole-response analysis and the targeted per-question check so both
+    apply the same rule.
+
+    ``sibling_names`` extends the same principle to the lecture's OTHER
+    concept names, so a list of the lecture's own labels ("markov hidden
+    states observations transitions") is recognised as naming things rather
+    than explaining any of them. A word is only discounted as a sibling name
+    when it is not also part of THIS concept's explanation.
+    """
+    name = concept.get("name", "")
+    refs = [concept.get("description", "")]
+    refs += list((concept.get("facts") or [])[:4])
+    refs += list((concept.get("examples") or [])[:MAX_EXAMPLE_REFS])
+    ref_words = set()
+    for r in refs:
+        ref_words |= set(content_words(r))
+    ref_words -= set(content_words(name)) | set(content_words(topic_name))
+    labels = set()
+    for other in sibling_names or []:
+        if (other or "").strip().lower() == name.strip().lower():
+            continue
+        labels |= {w for w in content_words(other) if w not in ref_words}
+    terms = {w for w in informative_terms(text, name, topic_name)
+             if not any(_word_match(w, l) for l in labels)}
+    # key terms are drawn from what SURVIVES: a label that was filtered out as
+    # another concept's name must not come back as corroboration here
+    key_terms = sorted(terms & ref_words)
+    return {"informative_terms": sorted(terms), "key_terms": key_terms,
+            "corroborated": bool(terms)
+            and (len(terms) >= MIN_EVIDENCE_TERMS or bool(key_terms))}
+
+
+def informative_terms(text: str, concept_name: str, topic_name: str = "") -> set[str]:
+    """Content words that say something ABOUT the concept.
+
+    Naming the concept is not evidence about it, and neither is naming the
+    lecture or passing judgement on it. What is left after removing those is
+    the only thing that can support a claim of understanding. Matching is
+    inflection-tolerant so "gradients" still counts as the name "Gradient".
+    """
+    drop = set(content_words(concept_name)) | set(content_words(topic_name))
+    return {w for w in content_words(text)
+            if w not in _VACUOUS_TERMS and not any(_word_match(w, d) for d in drop)}
 
 
 def contradiction_cues(description: str, contradiction: str) -> set[str]:
@@ -238,6 +342,12 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     endpoint_emb = emb[i : i + len(flat_endpoint_texts)]; i += len(flat_endpoint_texts)
     ref_emb = emb[i : i + 1]
 
+    # how close each sentence sits to any known wrong claim; used only to
+    # WITHHOLD credit, never to accuse (see MISCONCEPTION_SHADOW)
+    sent_miscon_best = np.zeros(n_s)
+    if misconceptions and n_s:
+        sent_miscon_best = np.max(cosine_matrix(miscon_emb, sent_emb), axis=0)
+
     # --- concept coverage ---
     concept_results = []
     coverage_points = 0.0
@@ -251,7 +361,19 @@ def analyze_response(text: str, topic_def: dict) -> dict:
             flat_best = int(np.argmax(block))
             best_ref, best_j = divmod(flat_best, n_s)
             best = float(block[best_ref, best_j])
-            if best >= CONCEPT_COVERED_T:
+            # Naming a concept is not explaining it. The reference texts carry
+            # the concept name, so "python uses indexing" sits very close to
+            # them without saying anything about indexing; an answer that adds
+            # nothing beyond the name cannot demonstrate the concept.
+            says_something = concept_evidence(
+                text, c, topic_def.get("name", ""),
+                sibling_names=[x["name"] for x in concepts])["corroborated"]
+            # a sentence that sits closer to a taught wrong claim than to this
+            # concept's own explanation does not demonstrate the concept
+            shadowed = float(sent_miscon_best[best_j]) > best + MISCONCEPTION_SHADOW
+            if not says_something:
+                status, pts = "missing", 0.0
+            elif best >= CONCEPT_COVERED_T and not shadowed:
                 status, pts = "covered", 1.0
             elif best >= CONCEPT_PARTIAL_T:
                 status, pts = "partial", 0.5
@@ -395,9 +517,15 @@ def analyze_response(text: str, topic_def: dict) -> dict:
             #     "split breaks the text into pieces and join puts the pieces
             #     back together" shares "back" with the wrong version of split()
             #     while stating the right one with "breaks".
-            cues = contradiction_cues(r["description"], r.get("contradiction", ""))
+            # Non-distinctive adverbs must not act as contradiction cues: a
+            # correct answer ("split gives you back the separate pieces in a
+            # list") should not be called wrong for sharing the word "back"
+            # with the teacher's wrong version. Applied to relationships only —
+            # misconception cues legitimately turn on small words like "one"
+            # versus "zero".
+            cues = contradiction_cues(r["description"], r.get("contradiction", "")) - _WEAK_CUES
             right_cues = (contradiction_cues(r.get("contradiction", ""), r["description"])
-                          if r.get("contradiction") else set())
+                           - _WEAK_CUES if r.get("contradiction") else set())
             contradicted_j = next(
                 (j for j in range(n_s)
                  if float(sims_r[ri, j]) >= RELATIONSHIP_ABOUT_T
@@ -491,15 +619,18 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     }
 
 
-def targeted_concept_check(text: str, concept: dict, topic_name: str = "") -> dict:
+def targeted_concept_check(text: str, concept: dict, topic_name: str = "",
+                           misconceptions: list[dict] | None = None,
+                           sibling_names: list[str] | None = None) -> dict:
     """Evaluate a short answer against ONE concept, using the question context.
 
     Short conversational answers ("It uses gradients.") often rely on the
     question for context, so their plain similarity to the concept description
     is low. Prefixing the concept name to the answer restores that context.
-    Because the shared prefix inflates similarity for any text, the contextual
-    score is only trusted when the answer also shares at least one content
-    word with the concept text (checked by the caller via "overlap").
+    Because the shared prefix inflates similarity for any text, neither score
+    is trusted unless the answer actually says something about the concept —
+    reported as "informative" (see informative_terms). The older "overlap"
+    count is still returned for reference.
     """
     name = concept["name"]
     # the concept is represented by its meaning AND each important lecture
@@ -507,17 +638,30 @@ def targeted_concept_check(text: str, concept: dict, topic_name: str = "") -> di
     refs = [f"{name}: {concept.get('description', '')}"]
     refs += [f"{name}: {f}" for f in (concept.get("facts") or [])[:4]]
     refs += [f"{name}: {e}" for e in (concept.get("examples") or [])[:MAX_EXAMPLE_REFS]]
-    emb = embed([text, f"{name}: {text}"] + refs)
-    ref_emb = emb[2:]
+    wrong = [m["description"] for m in (misconceptions or []) if m.get("description")]
+    emb = embed([text, f"{name}: {text}"] + refs + wrong)
+    ref_emb = emb[2:2 + len(refs)]
     plain = float(np.max(cosine_matrix(emb[0:1], ref_emb)))
     contextual = float(np.max(cosine_matrix(emb[1:2], ref_emb)))
+    # closer to a taught wrong claim than to the concept itself: withhold full
+    # credit without accusing the student of anything (MISCONCEPTION_SHADOW)
+    shadowed = False
+    if wrong:
+        worst = float(np.max(cosine_matrix(emb[0:1], emb[2 + len(refs):])))
+        shadowed = worst > plain + MISCONCEPTION_SHADOW
     # topic-title words ("Python", "Strings" for a lecture called "Strings in
     # Python") appear all over the reference texts without being evidence of
     # anything — "It's something in Python" must not pass the overlap gate
     ref_words = set().union(*(content_words(r) for r in refs))
     ref_words -= set(content_words(topic_name))
     overlap = len(set(content_words(text)) & ref_words)
-    return {"plain": round(plain, 3), "contextual": round(contextual, 3), "overlap": overlap}
+    # what the answer actually says about this concept, name and lecture title
+    # removed: an empty set means the student named it and stopped
+    evidence = concept_evidence(text, concept, topic_name,
+                                sibling_names=sibling_names)
+    return {"plain": round(plain, 3), "contextual": round(contextual, 3),
+            "overlap": overlap, "informative": bool(evidence["informative_terms"]),
+            "shadowed": shadowed, **evidence}
 
 
 def merge_session_analyses(analyses: list[dict]) -> dict:
