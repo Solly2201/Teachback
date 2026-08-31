@@ -332,10 +332,16 @@ def pdf_to_notes(data: bytes) -> tuple[str, dict]:
 
     doc = extract_document(data)
     raw = raw_text(doc)
-    if doc["scanned"]:
-        return "", {"scanned": True, "page_count": doc["page_count"],
-                    "extractor": doc["extractor"], "raw_text": raw,
+    coverage = {k: doc[k] for k in
+                ("text_quality", "scanned", "page_count", "image_pages",
+                 "image_page_count", "low_text_pages", "low_text_page_count",
+                 "text_page_count")}
+    if doc["text_quality"] != "text":
+        # Deliberately no markdown: a document whose pages are pictures has not
+        # been ingested, and handing back the fraction that happened to carry
+        # text would present a partial lecture as a whole one.
+        return "", {**coverage, "extractor": doc["extractor"], "raw_text": raw,
                     "removed_total": 0, "removed_by_reason": [], "empty_pages": []}
     report = clean_document(doc)
-    report.update({"scanned": False, "extractor": doc["extractor"], "raw_text": raw})
+    report.update({**coverage, "extractor": doc["extractor"], "raw_text": raw})
     return document_to_markdown(doc), report

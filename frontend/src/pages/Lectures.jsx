@@ -39,6 +39,16 @@ function IngestionReport({ report, rawText }) {
           : 'No repeated page decoration was found.'}
         {report.empty_pages?.length > 0 && ` ${report.empty_pages.length} page(s) contained only boilerplate and were skipped.`}
       </div>
+      {/* A page that yielded no selectable text is a picture: its content was
+          not read. Small numbers are tolerated but never hidden. */}
+      {report.image_page_count > 0 && (
+        <div className="text-amber-800">
+          ⚠ {report.image_page_count} page{report.image_page_count === 1 ? '' : 's'} contained no
+          selectable text (likely diagrams or scans) and could not be read.
+          Anything taught only on {report.image_page_count === 1 ? 'that page' : 'those pages'} is
+          not part of this draft.
+        </div>
+      )}
       {removed > 0 && (
         <ul className="space-y-0.5">
           {(report.removed_by_reason || []).map((r) => (

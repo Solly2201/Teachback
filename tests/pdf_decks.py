@@ -129,3 +129,76 @@ def sorting_deck() -> bytes:
 def scanned_deck() -> bytes:
     """An image-only PDF: pages exist, almost no selectable text."""
     return build_pdf([[line(".", 200, 10)] for _ in range(6)])
+
+
+def _text_page(page_no: int, heading: str, lines: list[str]) -> list[dict]:
+    """A page that really does carry selectable text."""
+    items = _chrome(page_no) + [line(heading, 50, 26, bold=True)]
+    y = 120
+    for text in lines:
+        items.append(line(text, y, 14))
+        y += 22
+    return items
+
+
+# Which pages of the real 22-page "Regular expression" lecture are photographs
+# of the board: 1-8 and 10-16, with typed text on 9 and 17-22. The lone text
+# page in the middle matters — it is why an interleaved layout is used rather
+# than "all images first".
+REGEX_IMAGE_PAGES = tuple(list(range(1, 9)) + list(range(10, 17)))
+
+
+def mixed_deck(image_pages=REGEX_IMAGE_PAGES, page_count: int = 22) -> bytes:
+    """A PDF where some pages are images and the rest are typed.
+
+    This is the shape that defeats any document-level average: the typed pages
+    carry thousands of characters, so the file looks like a normal text PDF
+    while most of the lecture exists only as pictures. The default reproduces
+    the real "Regular expression" lecture exactly — 15 image pages interleaved
+    with 7 text pages.
+
+    An image page is emitted with a genuinely empty content stream, which is
+    what the extractor sees for a photographed slide.
+
+    ``image_pages`` may also be given as an int, meaning "the first N pages".
+    """
+    if isinstance(image_pages, int):
+        image_pages = tuple(range(1, image_pages + 1))
+    blanks = set(image_pages)
+    pages: list[list[dict]] = []
+    for page_no in range(1, page_count + 1):
+        if page_no in blanks:
+            pages.append([])
+            continue
+        pages.append(_text_page(
+            page_no,
+            f"Exercise {page_no}",
+            ["A quantifier says how many times the previous item may repeat.",
+             "The star quantifier allows zero or more repetitions of the item.",
+             "Anchors match a position in the string rather than a character.",
+             "A character class matches any single character from a given set."],
+        ))
+    return build_pdf(pages)
+
+
+def sparse_but_readable_deck() -> bytes:
+    """Every page has text, but two are short section dividers.
+
+    A divider slide is not lost content, so a deck like this must still be
+    accepted — the distinction between "sparse" and "absent" is the whole
+    point of having two bars.
+    """
+    pages = [
+        _text_page(1, "Regular Expressions",
+                   ["A regular expression describes a pattern that text may match.",
+                    "The pattern is built from literal characters and metacharacters."]),
+        _chrome(2) + [line("Part One", 200, 30, bold=True)],
+        _text_page(3, "Character Classes",
+                   ["A character class matches any single character from a set.",
+                    "Ranges inside a class are written with a hyphen."]),
+        _chrome(4) + [line("Part Two", 200, 30, bold=True)],
+        _text_page(5, "Quantifiers",
+                   ["A quantifier says how many times the previous item may repeat.",
+                    "The plus quantifier requires at least one repetition."]),
+    ]
+    return build_pdf(pages)

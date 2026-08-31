@@ -299,9 +299,32 @@ TXT/MD ------------------------------------------------------------------>
    bullets, prose paragraphs with wrapped lines rejoined — plus `<!-- page N -->` provenance
    markers. The parser reads and strips those markers, so a suggestion can say *"Found on page
    7 under 'Indexing'"* even after the teacher hand-edits the extracted text.
-4. **Image-only PDFs** are detected (too little selectable text per page) and reported
-   honestly: the upload is refused with a message pointing at OCR, pasting, or the prepared-
-   note workflow. No OCR dependency was added.
+4. **Extractability is judged page by page, never by a document total.** A total hides the
+   case that matters: the real 22-page *Regular expression* lecture has 15 pages that are
+   photographs of the board and 7 typed pages, and those 7 carry enough characters that a
+   document average calls the file a normal text PDF — dropping two thirds of the lecture
+   without telling anyone. Two bars are used, because *sparse* and *absent* are different
+   problems: below `EMPTY_PAGE_CHARS` (10) a page yielded nothing and its content **has been
+   lost**; below `MIN_CHARS_PER_PAGE` (40) a page is merely sparse, like a title slide or a
+   section divider, and is reported but tolerated. The verdict is one of:
+
+   | `text_quality` | when | result |
+   |---|---|---|
+   | `text` | no image-only pages, or fewer than max(2, 10% of pages) | ingested; any image-only pages are still reported |
+   | `mixed` | at least max(2, 10% of pages) are image-only | **refused**, naming the pages |
+   | `scanned` | 80% or more of pages are image-only | **refused** |
+
+   A refused document produces **no notes at all** — handing back the fraction that happened
+   to carry text would present part of a lecture as the whole of it. The message names the
+   affected pages (*"pages 1-8, 10-16 … 15 of 22 pages could not be read"*) and points at OCR,
+   pasting, or the prepared-note workflow. `scanned` is still in the report for compatibility,
+   but now means "this file cannot be fully extracted", which is the question every caller was
+   actually asking. No OCR dependency was added: the goal here is to detect incomplete
+   extraction, not to fix it.
+
+   Measured on the two real lectures: the 108-page EMC Cloud Computing deck has **0** image-only
+   pages (minimum 145 characters per page) and still ingests; the *Regular expression* lecture
+   is identified as `mixed` with image pages `1-8, 10-16` and is refused.
 
 The review screen shows *"Extracted from 10 pages. Removed 30 repeated header/footer,
 page-number and copyright lines"* with examples, and a **View raw extraction** toggle for
@@ -744,6 +767,15 @@ happening in a student's mind.
   back to prose mining; a deck with no selectable text is refused rather than guessed at (no
   OCR). Multi-column layouts, tables and text inside images are not reconstructed — a
   two-column page is read in line order across both columns.
+- There is **no OCR**. A lecture that lives in images cannot be ingested at all — the system
+  detects that and says so, but the teacher's only routes are an OCR-enabled export, pasting
+  the text, or the prepared-note workflow. Adding OCR would mean a system binary or a large
+  dependency, which this project deliberately avoids.
+- The mixed/scanned tolerance is a heuristic on page counts, not on meaning: one image-only
+  diagram slide in a twenty-page deck is accepted (and reported) on the assumption that it is
+  a decoration rather than the lesson. If that one page *is* the lesson, its content is
+  silently absent from the draft — the report names the page, but nothing forces the teacher
+  to look.
 - The boilerplate cleanup is multi-signal and conservative, which means it errs towards
   *keeping* text: a footer that appears on fewer than half the pages, or one typeset as large
   as the body text, will survive into the notes for the teacher to delete. Conversely a

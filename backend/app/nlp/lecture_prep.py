@@ -315,21 +315,44 @@ def extract_material(filename: str, data: bytes) -> tuple[str, dict]:
         except ImportError as exc:  # pragma: no cover - environment dependent
             raise ValueError("PDF support needs the 'pdfplumber' or 'pypdf' package.") from exc
         report["kind"] = "pdf"
-        if report.get("scanned"):
-            raise ScannedPdfError(
-                "This PDF appears to contain scanned or image-based pages and very little "
-                "selectable text. Please use an OCR-enabled PDF, paste the text directly, "
-                "or use the prepared-note workflow.", report)
+        if report.get("text_quality", "text") != "text":
+            raise ScannedPdfError(_coverage_message(report), report)
         return text, report
     raise ValueError("Unsupported file type — upload .txt, .md or .pdf, or paste the notes as text.")
 
 
 class ScannedPdfError(ValueError):
-    """An image-only PDF: reported honestly instead of pretending it worked."""
+    """A PDF that could not be fully extracted, reported instead of half-ingested.
+
+    Covers both a wholly scanned document and — the case that actually bites —
+    a MIXED one, where some pages are photographs of the board and the rest are
+    typed. There is no OCR here, so those pages carry no text at all; accepting
+    the remainder would hand the teacher a fraction of the lecture presented as
+    the whole of it.
+    """
 
     def __init__(self, message: str, report: dict):
         super().__init__(message)
         self.report = report
+
+
+def _coverage_message(report: dict) -> str:
+    """Say exactly which pages could not be read, and what to do instead."""
+    from .pdf_extract import format_page_ranges
+
+    pages = format_page_ranges(report.get("image_pages") or [])
+    total = report.get("page_count") or 0
+    n_image = report.get("image_page_count") or 0
+    advice = ("Upload an OCR-enabled PDF, paste the lecture text directly, or use the "
+              "prepared-note workflow.")
+    if report.get("text_quality") == "scanned":
+        return ("This PDF appears to be scanned or image-based: none of its "
+                f"{total} page(s) contain selectable text, so nothing could be "
+                f"extracted. {advice}")
+    return (f"This PDF contains image-based pages with little or no selectable text "
+            f"(page{'s' if n_image != 1 else ''} {pages}). {n_image} of {total} pages "
+            "could not be read, so the lecture would only be partly imported — "
+            f"TeachBack will not import part of a lecture as if it were all of it. {advice}")
 
 
 def _norm_word(w: str) -> str:

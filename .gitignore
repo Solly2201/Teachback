@@ -24,6 +24,10 @@ backend/teachback.db
 .idea/
 *.swp
 
+# Real lecture PDFs used for manual ingestion checks. Copyrighted course
+# material and large; tests/pdf_decks.py reproduces both shapes synthetically.
+test data/
+
 # OS files
 .DS_Store
 Thumbs.db

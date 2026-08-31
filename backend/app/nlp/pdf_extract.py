@@ -33,13 +33,27 @@ import re
 from io import BytesIO
 from statistics import median
 
-# A page with almost no selectable text is an image/scan, not a text PDF.
-# Judged per page (a 200-page scan and a 3-page scan are both scans), with an
-# absolute floor that only applies to multi-page documents so a single short
-# slide is not mistaken for an image.
+# --- how much of the document is actually extractable ----------------------
+# Judged PAGE BY PAGE, never by a document total. A total hides the case that
+# matters: a 22-page lecture whose first 15 pages are photographs of the board
+# and whose last 7 are typed exercises has plenty of characters overall, so a
+# document-level average calls it a normal text PDF and two thirds of the
+# lecture disappears without anyone being told.
+#
+# Two bars, because "sparse" and "absent" are different problems:
+#   EMPTY_PAGE_CHARS   below this a page yielded essentially nothing — it is an
+#                      image, and its content HAS been lost.
+#   MIN_CHARS_PER_PAGE below this a page is merely sparse (a title slide, a
+#                      section divider). Reported, but not itself a failure.
+EMPTY_PAGE_CHARS = 10
 MIN_CHARS_PER_PAGE = 40
-MIN_TOTAL_CHARS = 200
-SCAN_FLOOR_PAGES = 3
+
+# A couple of image-only diagram slides in a long deck is normal and is only
+# reported; losing a tenth of the pages is not, and stops the upload.
+MIXED_PAGE_FRACTION = 0.10
+MIXED_PAGE_FLOOR = 2
+# Above this share of image-only pages the file is a scan, not a mixed document.
+SCANNED_PAGE_FRACTION = 0.8
 
 # words on the same visual line differ by at most this many points vertically
 LINE_TOLERANCE = 2.5
@@ -225,18 +239,72 @@ def extract_document(data: bytes) -> dict:
     pages = result["pages"]
     total_chars = sum(len(b["text"]) for p in pages for b in p["blocks"])
     page_count = len(pages)
-    scanned = page_count > 0 and (
-        total_chars < MIN_CHARS_PER_PAGE * page_count
-        or (page_count >= SCAN_FLOOR_PAGES and total_chars < MIN_TOTAL_CHARS)
-    )
     return {
         "pages": pages,
         "page_count": page_count,
         "block_count": sum(len(p["blocks"]) for p in pages),
         "char_count": total_chars,
         "body_size": _body_size(pages),
-        "scanned": scanned,
         "extractor": result["extractor"],
+        **assess_text_coverage(pages),
+    }
+
+
+def format_page_ranges(numbers: list[int], limit: int = 6) -> str:
+    """"1-8, 10-16" — fifteen page numbers in a row are unreadable."""
+    if not numbers:
+        return ""
+    ordered = sorted(set(numbers))
+    ranges: list[tuple[int, int]] = [(ordered[0], ordered[0])]
+    for n in ordered[1:]:
+        start, end = ranges[-1]
+        if n == end + 1:
+            ranges[-1] = (start, n)
+        else:
+            ranges.append((n, n))
+    parts = [str(a) if a == b else f"{a}-{b}" for a, b in ranges]
+    if len(parts) > limit:
+        return ", ".join(parts[:limit]) + f" and {len(parts) - limit} more"
+    return ", ".join(parts)
+
+
+def assess_text_coverage(pages: list[dict]) -> dict:
+    """Classify how much of the document is genuinely extractable, PER PAGE.
+
+    Returns ``text_quality`` — one of:
+
+      "text"     every page (or all but a tolerated few) yielded real text
+      "mixed"    a meaningful number of pages are image-only: some of the
+                 lecture exists only as pictures and has NOT been extracted
+      "scanned"  essentially the whole document is images
+
+    ``scanned`` stays in the result for compatibility, but now means "this file
+    cannot be fully extracted" rather than "this file is entirely a scan" —
+    which is the question every caller was actually asking.
+    """
+    page_count = len(pages)
+    per_page = [(p["number"], sum(len(b["text"]) for b in p["blocks"])) for p in pages]
+    image_pages = [n for n, chars in per_page if chars < EMPTY_PAGE_CHARS]
+    low_text_pages = [n for n, chars in per_page if chars < MIN_CHARS_PER_PAGE]
+
+    if page_count == 0:
+        quality = "scanned"
+    elif len(image_pages) >= SCANNED_PAGE_FRACTION * page_count:
+        quality = "scanned"
+    elif len(image_pages) >= max(MIXED_PAGE_FLOOR, MIXED_PAGE_FRACTION * page_count):
+        quality = "mixed"
+    else:
+        quality = "text"
+
+    return {
+        "text_quality": quality,
+        "scanned": quality != "text",
+        "page_chars": [chars for _, chars in per_page],
+        "image_pages": image_pages,
+        "image_page_count": len(image_pages),
+        "low_text_pages": low_text_pages,
+        "low_text_page_count": len(low_text_pages),
+        "text_page_count": page_count - len(image_pages),
     }
 
 

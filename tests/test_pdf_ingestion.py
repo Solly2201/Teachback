@@ -11,6 +11,7 @@ properties are checked on a completely different deck (sorting algorithms) so
 nothing can be satisfied by hardcoding one subject's vocabulary.
 """
 import base64
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,7 +22,7 @@ from app.main import app
 from app.nlp.lecture_parser import parse_lecture
 from app.nlp.lecture_prep import ScannedPdfError, extract_material, prepare_lecture
 from app.nlp.pdf_clean import clean_document, document_to_markdown, pdf_to_notes
-from app.nlp.pdf_extract import extract_document
+from app.nlp.pdf_extract import MIN_CHARS_PER_PAGE, extract_document
 
 client = TestClient(app)
 
@@ -250,3 +251,210 @@ def test_cleanup_report_counts_match_the_blocks_removed():
     for block in dropped:
         if len(block["text"]) > 12:
             assert block["text"] not in markdown
+
+
+# ==========================================================================
+# Page-aware extractability
+# ==========================================================================
+# A document total hides the case that matters. The real 22-page "Regular
+# expression" lecture has 15 pages that are photographs of the board and 7
+# typed pages; the typed pages carry thousands of characters, so a
+# document-level average declares the file a normal text PDF and two thirds of
+# the lecture is dropped without anyone being told. Extractability is therefore
+# judged page by page.
+
+from pdf_decks import REGEX_IMAGE_PAGES, mixed_deck, sparse_but_readable_deck  # noqa: E402
+
+from app.nlp.pdf_extract import assess_text_coverage, format_page_ranges  # noqa: E402
+
+
+# --- A. a normal text PDF ---------------------------------------------------
+
+@pytest.mark.parametrize("name,deck", DECKS + [("sparse", sparse_but_readable_deck)])
+def test_all_text_pdfs_are_classified_as_text(name, deck):
+    doc = extract_document(deck())
+    assert doc["text_quality"] == "text"
+    assert doc["scanned"] is False
+    assert doc["image_page_count"] == 0
+    assert doc["text_page_count"] == doc["page_count"]
+    text, report = pdf_to_notes(deck())
+    assert text.strip(), "a text PDF must still produce notes"
+    assert report["text_quality"] == "text"
+
+
+def test_a_short_section_divider_is_sparse_not_missing():
+    """"Part One" on its own is a divider, not a lost page. Sparse and absent
+    are different problems and must not share a threshold."""
+    doc = extract_document(sparse_but_readable_deck())
+    assert doc["text_quality"] == "text"
+    assert doc["image_page_count"] == 0
+    prep = prepare_lecture(pdf_to_notes(sparse_but_readable_deck())[0])
+    assert prep["concepts"], "a readable deck with dividers must still extract"
+
+
+# --- B. a fully scanned PDF -------------------------------------------------
+
+def test_a_fully_scanned_pdf_is_classified_and_refused():
+    doc = extract_document(scanned_deck())
+    assert doc["text_quality"] == "scanned"
+    assert doc["scanned"] is True
+    assert doc["image_page_count"] == doc["page_count"]
+    assert doc["text_page_count"] == 0
+
+    with pytest.raises(ScannedPdfError) as exc:
+        extract_material("scan.pdf", scanned_deck())
+    message = str(exc.value).lower()
+    assert "scanned" in message or "image" in message
+    assert "ocr" in message
+    assert exc.value.report["text_quality"] == "scanned"
+
+
+# --- C/D. the mixed PDF, which is the regression ----------------------------
+
+def test_a_mixed_pdf_is_not_mistaken_for_a_text_pdf():
+    """15 image pages + 7 text pages: the exact shape of the real lecture."""
+    doc = extract_document(mixed_deck())
+    assert doc["page_count"] == 22
+    assert doc["text_quality"] == "mixed", doc["text_quality"]
+    assert doc["scanned"] is True
+    assert doc["image_page_count"] == 15
+    assert doc["text_page_count"] == 7
+    assert doc["image_pages"] == list(REGEX_IMAGE_PAGES)
+    # the typed pages carry enough text that a document total would pass
+    assert doc["char_count"] > MIN_CHARS_PER_PAGE * doc["page_count"], (
+        "the fixture must reproduce the trap: a document average would say 'text'")
+
+
+def test_a_mixed_pdf_is_refused_and_never_partly_ingested():
+    with pytest.raises(ScannedPdfError) as exc:
+        extract_material("lecture.pdf", mixed_deck())
+    report = exc.value.report
+    assert report["text_quality"] == "mixed"
+    assert report["image_page_count"] == 15
+    message = str(exc.value)
+    assert "1-8, 10-16" in message, message
+    assert "15 of 22" in message
+    assert "ocr" in message.lower()
+
+    # and nothing partial escapes towards the parser
+    text, _ = pdf_to_notes(mixed_deck())
+    assert text == "", "a mixed PDF must yield no notes at all"
+    assert prepare_lecture(text)["concepts"] == []
+
+
+def test_a_text_page_in_the_middle_does_not_rescue_a_mixed_pdf():
+    """Page 9 of the real lecture is typed, sitting between two runs of
+    images. Interleaving must not change the verdict."""
+    interleaved = extract_document(mixed_deck())
+    front_loaded = extract_document(mixed_deck(image_pages=15, page_count=22))
+    assert interleaved["text_quality"] == front_loaded["text_quality"] == "mixed"
+
+
+@pytest.mark.parametrize("image_pages,page_count,expected", [
+    (15, 22, "mixed"),     # the real lecture
+    (3, 10, "mixed"),      # a third of a short lecture lost
+    (2, 8, "mixed"),       # the absolute floor
+    (1, 20, "text"),       # one diagram slide in a long deck: tolerated
+    (0, 10, "text"),
+    (10, 10, "scanned"),   # nothing readable at all
+])
+def test_the_boundary_between_text_mixed_and_scanned(image_pages, page_count, expected):
+    doc = extract_document(mixed_deck(image_pages=image_pages, page_count=page_count))
+    assert doc["text_quality"] == expected, (
+        f"{image_pages}/{page_count} image pages -> {doc['text_quality']}")
+
+
+# --- the report has to be able to say WHICH pages ---------------------------
+
+def test_the_report_identifies_the_affected_pages():
+    _, report = pdf_to_notes(mixed_deck())
+    for key in ("text_quality", "image_pages", "image_page_count",
+                "low_text_pages", "low_text_page_count", "text_page_count",
+                "page_count"):
+        assert key in report, f"the report must expose {key}"
+    assert report["image_pages"] == list(REGEX_IMAGE_PAGES)
+    assert report["low_text_page_count"] >= report["image_page_count"]
+    # the raw extraction stays available even for a refused document
+    assert "raw_text" in report
+
+
+def test_page_ranges_are_readable():
+    assert format_page_ranges([1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16]) \
+        == "1-8, 10-16"
+    assert format_page_ranges([3]) == "3"
+    assert format_page_ranges([]) == ""
+    assert format_page_ranges([1, 3, 5, 7, 9, 11, 13, 15]).endswith("more")
+
+
+def test_coverage_assessment_is_page_wise_not_total():
+    """One enormous page cannot vouch for nine empty ones."""
+    pages = [{"number": 1, "blocks": [{"text": "x" * 5000}]}]
+    pages += [{"number": n, "blocks": []} for n in range(2, 11)]
+    coverage = assess_text_coverage(pages)
+    assert coverage["text_quality"] == "scanned"
+    assert coverage["image_page_count"] == 9
+    assert coverage["text_page_count"] == 1
+
+
+# --- the upload endpoint tells the teacher the same thing -------------------
+
+def test_the_extract_endpoint_refuses_a_mixed_pdf_with_the_page_list():
+    payload = base64.b64encode(mixed_deck()).decode()
+    r = client.post("/api/lectures/extract",
+                    json={"filename": "lecture.pdf", "content_base64": payload})
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert "1-8, 10-16" in detail
+    assert "ocr" in detail.lower()
+
+
+def test_the_extract_endpoint_still_accepts_a_normal_deck():
+    payload = base64.b64encode(cloud_deck()).decode()
+    r = client.post("/api/lectures/extract",
+                    json={"filename": "deck.pdf", "content_base64": payload})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["report"]["text_quality"] == "text"
+    assert body["report"]["image_page_count"] == 0
+    assert body["text"].strip()
+
+
+# ==========================================================================
+# The real lecture PDFs, when they are available locally
+# ==========================================================================
+# These are the two files that motivated the page-aware detection. They are
+# not committed (they are copyrighted course material and large), so the tests
+# skip when the folder is absent — the synthetic fixtures above reproduce both
+# shapes and are what CI relies on.
+
+REAL_PDF_DIR = Path(__file__).resolve().parent.parent / "test data"
+CLOUD_PDF = REAL_PDF_DIR / "cc_m1_merged.pdf"
+REGEX_PDF = REAL_PDF_DIR / "Regular expression.pdf"
+
+
+@pytest.mark.skipif(not CLOUD_PDF.exists(), reason="real Cloud Computing PDF not present")
+def test_real_cloud_deck_is_still_a_normal_text_pdf():
+    doc = extract_document(CLOUD_PDF.read_bytes())
+    assert doc["page_count"] == 108
+    assert doc["text_quality"] == "text", doc["image_pages"][:20]
+    assert doc["image_page_count"] == 0
+    text, report = pdf_to_notes(CLOUD_PDF.read_bytes())
+    assert text.strip()
+    assert report["removed_total"] > 0, "its running header/footer should still be removed"
+    lowered = text.lower()
+    assert "all rights reserved" not in lowered
+    assert "copyright" not in lowered
+
+
+@pytest.mark.skipif(not REGEX_PDF.exists(), reason="real Regular expression PDF not present")
+def test_real_regex_lecture_is_identified_as_mixed_and_refused():
+    doc = extract_document(REGEX_PDF.read_bytes())
+    assert doc["page_count"] == 22
+    assert doc["text_quality"] == "mixed", doc["text_quality"]
+    assert doc["image_page_count"] == 15
+    assert doc["text_page_count"] == 7
+    # a document total would have called this a normal text PDF
+    assert doc["char_count"] > MIN_CHARS_PER_PAGE * doc["page_count"]
+    with pytest.raises(ScannedPdfError) as exc:
+        extract_material("Regular expression.pdf", REGEX_PDF.read_bytes())
+    assert "15 of 22" in str(exc.value)
