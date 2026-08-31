@@ -210,18 +210,16 @@ def _seed_python_lecture(db, subject) -> Topic | None:
     """
     if subject is None:
         return None
-    from .api.lectures import apply_draft_to_topic
+    from .api.lectures import _known_misconceptions, apply_draft_to_topic
     from .nlp.lecture_prep import prepare_lecture
 
     lec_def = PYTHON_LECTURE
     prep = prepare_lecture(
         lec_def["material"], title=lec_def["title"], description=lec_def["description"],
         objectives=lec_def["objectives"],
-        known_misconceptions=[
-            {"name": m.name, "description": m.description, "clarification": m.clarification,
-             "probe_question": m.probe_question}
-            for m in db.query(Misconception).all()
-        ],
+        # the same subject-scoped catalog the API uses, so the seeded lecture
+        # goes through exactly the code path a teacher's lecture does
+        known_misconceptions=_known_misconceptions(db, subject.id),
     )
     lecture = Lecture(
         subject_id=subject.id,

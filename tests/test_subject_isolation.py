@@ -123,3 +123,58 @@ def test_an_edit_cannot_move_a_topic_out_of_every_subject():
     assert client.get(f"/api/topics/{topic_id}").json()["id"] == topic_id
     listed = client.get(f"/api/topics?subject_id={subject_id}").json()
     assert any(t["id"] == topic_id for t in listed)
+
+
+# ---------------------------------------------------------------------------
+# the lecture preparation step is faculty-facing too
+# ---------------------------------------------------------------------------
+
+# Material for a Python lecture that talks about error, weights and updates —
+# the vocabulary the Neural Networks misconceptions are written in. Before the
+# catalog was scoped, preparing this offered Prof. Krishnan's authored
+# misconceptions to Prof. Rao, ready to publish into a Python topic.
+CROSS_SUBJECT_MATERIAL = """# Model Training Loops in Python
+
+## The training loop
+
+A training loop repeats over the dataset many times.
+Each pass computes the error between the prediction and the target.
+The weights are then updated so the loss goes down.
+
+## Learning rate
+
+The learning rate controls how big each update step is.
+A rate that is too large makes the loss jump around instead of settling.
+"""
+
+
+def _misconception_names(subject_id):
+    """Every misconception authored under a subject's topics."""
+    names = set()
+    for t in client.get(f"/api/topics?subject_id={subject_id}&include_archived=true").json():
+        names |= {m["name"] for m in client.get(f"/api/topics/{t['id']}").json()["misconceptions"]}
+    return names
+
+
+def test_lecture_preparation_never_suggests_another_subjects_misconceptions():
+    nn_id, py_id = _subject_ids()
+    nn_miscons = _misconception_names(nn_id)
+    assert nn_miscons, "the Neural Networks topics should have authored misconceptions"
+
+    lec = client.post("/api/lectures", json={
+        "subject_id": py_id, "title": "Model Training Loops",
+        "material_text": CROSS_SUBJECT_MATERIAL}).json()
+    suggested = {m["name"] for m in lec["suggestions"]["misconception_suggestions"]}
+    leaked = suggested & nn_miscons
+    assert not leaked, f"another subject's misconceptions were suggested: {sorted(leaked)}"
+
+
+def test_a_subjects_own_misconceptions_are_still_reusable():
+    """Scoping must not silently disable the catalog for the subject that owns it."""
+    nn_id, _ = _subject_ids()
+    lec = client.post("/api/lectures", json={
+        "subject_id": nn_id, "title": "Backpropagation recap",
+        "material_text": CROSS_SUBJECT_MATERIAL}).json()
+    suggested = {m["name"] for m in lec["suggestions"]["misconception_suggestions"]}
+    assert suggested & _misconception_names(nn_id), (
+        "the subject's own authored misconceptions should still be offered")

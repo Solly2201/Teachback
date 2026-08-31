@@ -366,6 +366,46 @@ def test_archived_history_still_shows_in_student_progress():
     assert any(o["topic_id"] == tid for o in after["timeline"])
 
 
+@pytest.mark.skipif(not hmm_available(), reason="HMM not trained")
+def test_an_archived_topic_cannot_take_a_new_knowledge_check():
+    """Blocking new sessions is not enough on its own: the knowledge check is
+    the other way a student can add history to a topic."""
+    subject = _subject("Python Programming")
+    student = _student()
+    topics = client.get(f"/api/topics?subject_id={subject['id']}").json()
+    seeded = next(t for t in topics if t["name"] == "Strings in Python")
+    quiz = client.get(f"/api/topics/{seeded['id']}/quiz").json()
+    answers = [{"question_id": q["id"], "selected_index": 0} for q in quiz["questions"]]
+
+    _run_session(seeded["id"], student["id"])          # give it history...
+    assert client.delete(f"/api/topics/{seeded['id']}").json()["mode"] == "archived"
+
+    r = client.post(f"/api/quiz/{quiz['quiz_id']}/submit",
+                    json={"student_id": student["id"], "answers": answers})
+    assert r.status_code == 400
+    assert "no longer available" in r.json()["detail"].lower()
+
+
+@pytest.mark.skipif(not hmm_available(), reason="HMM not trained")
+def test_a_check_that_follows_an_existing_session_still_completes():
+    """A student who finished a session before it was archived may still hand
+    in the knowledge check for it — that is finishing, not starting."""
+    subject = _subject("Python Programming")
+    student = _student()
+    topics = client.get(f"/api/topics?subject_id={subject['id']}").json()
+    seeded = next(t for t in topics if t["name"] == "Strings in Python")
+    quiz = client.get(f"/api/topics/{seeded['id']}/quiz").json()
+    session_id = _run_session(seeded["id"], student["id"])
+
+    client.delete(f"/api/topics/{seeded['id']}")
+
+    r = client.post(f"/api/quiz/{quiz['quiz_id']}/submit", json={
+        "student_id": student["id"], "session_id": session_id,
+        "answers": [{"question_id": q["id"], "selected_index": 0} for q in quiz["questions"]]})
+    assert r.status_code == 200, r.text
+    assert r.json()["n_questions"] == len(quiz["questions"])
+
+
 # ---------------------------------------------------------------------------
 # restore
 # ---------------------------------------------------------------------------

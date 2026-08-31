@@ -242,11 +242,26 @@ def get_lecture(lecture_id: int, db: Session = Depends(get_db)):
     return lecture_out(lec)
 
 
-def _known_misconceptions(db: Session) -> list[dict]:
+def _known_misconceptions(db: Session, subject_id: int) -> list[dict]:
+    """Previously authored misconceptions THIS subject may reuse.
+
+    The preparation step matches stored misconceptions against the new
+    material and offers the close ones as suggestions. Reading the whole table
+    made that a cross-subject leak: a Python lecture that mentions error and
+    weights was offered the Neural Networks teacher's authored misconceptions,
+    ready to publish into a Python topic. A misconception belongs to a topic
+    and a topic to a subject, so the catalog is scoped the same way every
+    faculty-facing aggregate is. Archived topics are left out, like everywhere
+    else — retired material should not seed new lectures.
+    """
+    rows = (db.query(Misconception)
+            .join(Topic, Topic.id == Misconception.topic_id)
+            .filter(Topic.subject_id == subject_id, Topic.archived_at.is_(None))
+            .all())
     return [
         {"name": m.name, "description": m.description,
          "clarification": m.clarification, "probe_question": m.probe_question}
-        for m in db.query(Misconception).all()
+        for m in rows
     ]
 
 
@@ -267,7 +282,7 @@ def create_lecture(data: LectureIn, db: Session = Depends(get_db)):
 
     prep = prepare_lecture(
         data.material_text, title=data.title, description=data.description,
-        objectives=data.objectives, known_misconceptions=_known_misconceptions(db),
+        objectives=data.objectives, known_misconceptions=_known_misconceptions(db, subject.id),
     )
     draft = {
         # the full evidence-carrying concept suggestions (facts, examples,

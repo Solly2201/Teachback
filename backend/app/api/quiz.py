@@ -222,6 +222,14 @@ def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
         raise HTTPException(404, "Student not found")
     if not data.answers:
         raise HTTPException(400, "No answers submitted.")
+    # An archived topic is retired material: no new work may start on it. A
+    # check that follows a session the student already completed is finishing
+    # something that started while the topic was live, so that stays allowed —
+    # this only blocks a fresh, standalone attempt on retired material, the
+    # one path that could still add history to an archived topic.
+    quiz_topic = db.get(Topic, quiz.topic_id)
+    if data.session_id is None and quiz_topic is not None and quiz_topic.archived_at is not None:
+        raise HTTPException(400, "This lecture is no longer available for TeachBack.")
     # basic referential consistency: the knowledge check must belong to the
     # session it claims to follow, and that session must be this student's
     session = db.get(TeachSession, data.session_id) if data.session_id else None

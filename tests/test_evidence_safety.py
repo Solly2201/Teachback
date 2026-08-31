@@ -293,3 +293,103 @@ def test_keyword_salad_takeaway_creates_no_evidence_end_to_end():
     # the student still sees their own words back
     progress = client.get(f"/api/students/{student['id']}/progress").json()
     assert any("strings indexing slicing" in s["text"] for s in progress["summaries"])
+
+
+# ------------------------------- asking is not explaining (and not confessing)
+
+# A teach-back is evidence because the student produced the explanation. A
+# question produces none — but it sits in the concept's own vocabulary and is
+# semantically about it, so it used to score as a demonstration. The worst
+# case credited the concept to a student who had just said, in the same
+# sentence, that they could not explain it.
+
+QUESTION_TOPIC = {
+    "name": "Backpropagation",
+    "reference_explanation": "The loss measures the error and gradients update the weights.",
+    "concepts": [
+        {"id": 1, "name": "Gradient",
+         "description": "The gradient is how much the loss changes when a weight changes.",
+         "facts": ["The gradient points in the direction the loss increases."]},
+    ],
+    "misconceptions": [
+        {"id": 1, "name": "Gradient is the loss",
+         "description": "The gradient and the loss are the same thing.",
+         "clarification": "The loss is the error; the gradient is its rate of change."},
+    ],
+    "relationships": [],
+}
+
+ASKED_NOT_ANSWERED = [
+    "What is a gradient?",
+    "wait, can you explain what a gradient is?",
+    "sorry what does gradient descent mean?",
+    "can you explain the gradient again?",
+    "I don't understand the gradient, could you go over it?",
+    "remind me what the gradient does?",
+]
+
+
+@pytest.mark.parametrize("text", ASKED_NOT_ANSWERED)
+def test_asking_about_a_concept_never_demonstrates_it(text):
+    from app.nlp.analyzer import analyze_response
+
+    result = analyze_response(text, QUESTION_TOPIC)
+    assert [c["status"] for c in result["concepts"]] == ["missing"], text
+    assert result["features"]["concept_coverage"] == 0.0
+    # correctness and depth measure the explanation, so they cannot be earned
+    # by a question either
+    assert result["features"]["semantic_correctness"] == 0.0
+    assert result["features"]["explanation_depth"] == 0.0
+    # ...but asking is still engagement, and effort says so
+    assert result["features"]["response_effort"] > 0.0
+
+
+def test_asking_whether_a_misconception_is_true_is_not_holding_it():
+    """An unanswered question must never become an accusation."""
+    from app.nlp.analyzer import analyze_response
+
+    asked = analyze_response("Is the gradient the same thing as the loss?", QUESTION_TOPIC)
+    assert asked["detected_misconceptions"] == []
+    assert asked["features"]["misconception_score"] == 0.0
+    # the same idea ASSERTED is still detected — the rule removes false
+    # accusations, it does not switch misconception detection off
+    claimed = analyze_response("The gradient is the same thing as the loss.", QUESTION_TOPIC)
+    assert claimed["detected_misconceptions"] == ["Gradient is the loss"]
+
+
+def test_an_explanation_keeps_its_credit_when_it_ends_with_a_question():
+    """Only the asking part is discounted, not the whole answer."""
+    from app.nlp.analyzer import analyze_response
+
+    result = analyze_response(
+        "The gradient tells us how much the loss changes when a weight changes. "
+        "Does that sound right?", QUESTION_TOPIC)
+    assert result["concepts"][0]["status"] == "covered"
+
+
+def test_a_rhetorical_question_does_not_hide_the_answer_that_follows():
+    from app.nlp.analyzer import analyze_response
+
+    result = analyze_response(
+        "What is a gradient? It is how much the loss changes when you change a weight.",
+        QUESTION_TOPIC)
+    # the point is that the answer still counts; which tier it reaches depends
+    # on how much reference text the concept carries
+    assert result["concepts"][0]["status"] in ("covered", "partial")
+
+
+def test_the_per_question_check_applies_the_same_rule():
+    """The short-answer path has its own scorer; it must agree."""
+    from app.nlp.analyzer import targeted_concept_check
+
+    concept = QUESTION_TOPIC["concepts"][0]
+    asked = targeted_concept_check("can you explain what a gradient is?", concept,
+                                   topic_name="Backpropagation")
+    assert asked["informative"] is False
+    assert asked["corroborated"] is False
+    assert asked["plain"] == 0.0 and asked["contextual"] == 0.0
+
+    answered = targeted_concept_check(
+        "it is how much the loss changes when a weight changes", concept,
+        topic_name="Backpropagation")
+    assert answered["informative"] is True

@@ -182,6 +182,42 @@ _VACUOUS_TERMS = {
 }
 
 
+# Openers that make a sentence a request to be taught rather than an
+# explanation, even without a question mark. Deliberately short and closed:
+# no real explanation begins with any of them.
+_ASKING_OPENERS = (
+    "can you", "could you", "can u", "would you", "will you", "can we",
+    "please explain", "explain ", "tell me", "help me", "remind me",
+    "i don't understand", "i dont understand", "i don't get", "i dont get",
+    "i'm not sure what", "im not sure what", "no idea what",
+)
+
+
+def is_question(sentence: str) -> bool:
+    """True when the student is ASKING rather than explaining.
+
+    A teach-back is evidence of understanding because the student produced the
+    explanation. A question produces none: "what is a gradient?", "sorry what
+    does gradient descent mean?" and "I don't understand the gradient, could
+    you go over it?" all sit close to the concept's reference text — they are
+    about it, in its vocabulary — so they were scored as demonstrating it. The
+    last one credited the concept to a student who had just said outright that
+    they could not explain it.
+
+    Asking is still engagement, and response_effort keeps counting it; it just
+    cannot be evidence of understanding, and equally cannot be held against
+    the student as a misconception ("is the gradient the same as the loss?" is
+    a question, not a claim).
+    """
+    s = sentence.strip().lower()
+    return bool(s) and (s.endswith("?") or s.startswith(_ASKING_OPENERS))
+
+
+def answering_sentences(sentences: list[str]) -> list[str]:
+    """The sentences that assert something, questions removed."""
+    return [s for s in sentences if not is_question(s)]
+
+
 def is_term_list(text: str) -> bool:
     """True for a bare list of terms rather than a statement.
 
@@ -354,6 +390,17 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     words = text.split()
     n_words = len(words)
 
+    # Questions are requests, not demonstrations (see is_question). They are
+    # excluded from every similarity that decides evidence — for the student's
+    # benefit in both directions: no credit for asking, and no accusation for
+    # asking either. When the answer contains no question at all, `asking` is
+    # empty and everything below is byte-for-byte what it always was.
+    asking = [is_question(s) for s in sentences]
+    answering = [s for s, q in zip(sentences, asking) if not q]
+    # what the student actually asserted; the untouched text when they asked
+    # nothing, so ordinary answers are unaffected by the join
+    said = " ".join(answering) if any(asking) else text
+
     concepts = topic_def.get("concepts", [])
     misconceptions = topic_def.get("misconceptions", [])
     relationships = topic_def.get("relationships", [])
@@ -384,12 +431,26 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     flat_endpoint_texts = [t for pair in endpoint_refs_per_rel for side in pair for t in side]
     ref_text = topic_def.get("reference_explanation", "") or topic_def.get("name", "")
 
-    to_embed = (sentences + [text] + flat_concept_texts + miscon_texts + clar_texts
+    to_embed = (sentences + [said] + flat_concept_texts + miscon_texts + clar_texts
                 + rel_texts + flat_endpoint_texts + [ref_text])
     emb = embed(to_embed)
 
     n_s = len(sentences)
     sent_emb = emb[:n_s]
+    ask_cols = np.array(asking, dtype=bool)
+
+    def sent_sims(x_emb):
+        """Similarity of each reference text against the ANSWERING sentences.
+
+        Question columns are pushed below every threshold rather than dropped,
+        so an all-question response simply matches nothing instead of needing
+        a separate empty-array path through the whole function.
+        """
+        m = cosine_matrix(x_emb, sent_emb)
+        if ask_cols.any():
+            m = m.copy()
+            m[:, ask_cols] = -1.0
+        return m
     full_emb = emb[n_s : n_s + 1]
     i = n_s + 1
     concept_emb = emb[i : i + len(flat_concept_texts)]; i += len(flat_concept_texts)
@@ -403,13 +464,13 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     # WITHHOLD credit, never to accuse (see MISCONCEPTION_SHADOW)
     sent_miscon_best = np.zeros(n_s)
     if misconceptions and n_s:
-        sent_miscon_best = np.max(cosine_matrix(miscon_emb, sent_emb), axis=0)
+        sent_miscon_best = np.max(sent_sims(miscon_emb), axis=0)
 
     # --- concept coverage ---
     concept_results = []
     coverage_points = 0.0
     if concepts and n_s:
-        sims = cosine_matrix(concept_emb, sent_emb)  # (all concept refs) x sentences
+        sims = sent_sims(concept_emb)  # (all concept refs) x answering sentences
         row = 0
         for ci, c in enumerate(concepts):
             n_refs = len(concept_refs[ci])
@@ -423,7 +484,7 @@ def analyze_response(text: str, topic_def: dict) -> dict:
             # them without saying anything about indexing; an answer that adds
             # nothing beyond the name cannot demonstrate the concept.
             says_something = concept_evidence(
-                text, c, topic_def.get("name", ""),
+                said, c, topic_def.get("name", ""),
                 sibling_names=[x["name"] for x in concepts])["corroborated"]
             # a sentence that sits closer to a taught wrong claim than to this
             # concept's own explanation does not demonstrate the concept
@@ -443,7 +504,7 @@ def analyze_response(text: str, topic_def: dict) -> dict:
             # content word (embeddings alone under-rate terse fact echoes
             # like "the first position is zero" vs "indexes start at 0")
             facts = (c.get("facts") or [])[:4]
-            answer_words = set(content_words(text))
+            answer_words = set(content_words(said))
             facts_matched = []
             for k, fact in enumerate(facts):
                 fact_sim = float(np.max(block[k + 1]))
@@ -486,11 +547,11 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     #    correct concept text is embedding-close.
     sent_concept_best = np.zeros(n_s)
     if concepts and n_s:
-        sent_concept_best = np.max(cosine_matrix(concept_emb, sent_emb), axis=0)
+        sent_concept_best = np.max(sent_sims(concept_emb), axis=0)
     miscon_results = []
     detected = []
     if misconceptions and n_s:
-        sims_m = cosine_matrix(miscon_emb, sent_emb)
+        sims_m = sent_sims(miscon_emb)
         sims_c = cosine_matrix(clar_emb, sent_emb)
         sent_words = [content_words(s) for s in sentences]
         for mi, m in enumerate(misconceptions):
@@ -538,8 +599,8 @@ def analyze_response(text: str, topic_def: dict) -> dict:
     # evidence, never a mistake, and nothing downstream may treat it as one.
     relationship_results = []
     if relationships and n_s:
-        sims_r = cosine_matrix(rel_emb, sent_emb)  # relationships x sentences
-        sims_e = cosine_matrix(endpoint_emb, sent_emb)  # endpoint refs x sentences
+        sims_r = sent_sims(rel_emb)  # relationships x answering sentences
+        sims_e = sent_sims(endpoint_emb)  # endpoint refs x answering sentences
         sent_words = [content_words(s) for s in sentences]
         sent_negated = [negated_terms(s) for s in sentences]
         title_words = set(content_words(topic_def.get("name", "")))
@@ -648,15 +709,18 @@ def analyze_response(text: str, topic_def: dict) -> dict:
         ]
 
     # --- semantic correctness ---
-    raw = float(cosine_matrix(full_emb, ref_emb)[0, 0]) if n_words else 0.0
+    raw = float(cosine_matrix(full_emb, ref_emb)[0, 0]) if said.strip() else 0.0
     # cosine values for on-topic explanations live roughly in [0.2, 0.8]; rescale
     semantic_correctness = float(np.clip((raw - 0.15) / 0.6, 0, 1))
 
     # --- depth & effort ---
-    cw = content_words(text)
+    cw = content_words(said)
+    n_said = len(answering) if any(asking) else n_s
     explanation_depth = float(
-        np.clip(0.5 * min(1.0, n_s / 4.0) + 0.5 * min(1.0, len(set(cw)) / 40.0), 0, 1)
+        np.clip(0.5 * min(1.0, n_said / 4.0) + 0.5 * min(1.0, len(set(cw)) / 40.0), 0, 1)
     )
+    # effort is deliberately measured on everything the student wrote: asking a
+    # question is engagement, it is only not an explanation
     response_effort = float(np.clip(n_words / 80.0, 0, 1))
 
     return {
@@ -689,7 +753,14 @@ def targeted_concept_check(text: str, concept: dict, topic_name: str = "",
     reported as "informative" (see informative_terms). The older "overlap"
     count is still returned for reference.
     """
+    # the same rule as the whole-response analysis: a question asked back is
+    # not an answer to the question that was asked
+    text = " ".join(answering_sentences(split_sentences(text)))
     name = concept["name"]
+    if not text.strip():
+        return {"plain": 0.0, "contextual": 0.0, "plain_lift": 0.0, "contextual_lift": 0.0,
+                "overlap": 0, "informative": False, "shadowed": False,
+                "inverts_exclusivity": False, **concept_evidence("", concept, topic_name)}
     # the concept is represented by its meaning AND each important lecture
     # fact — a short answer that expresses any one of them is on-point
     refs = [f"{name}: {concept.get('description', '')}"]

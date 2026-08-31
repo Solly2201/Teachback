@@ -131,7 +131,12 @@ same treatment the lecture cards use), `GET /api/topics/{id}/delete-preview` tel
 which of the two will happen and which records are being kept, an **Archived topics** section
 lists what was archived, and `POST /api/topics/{id}/restore` brings a topic and its lecture
 back. Both confirmations render from one shared `ConfirmDeleteDialog` component.
-Tests: `tests/test_topic_lifecycle.py`.
+
+Archived material accepts **no new work** of any kind: no new TeachBack session, and no new
+standalone knowledge-check attempt either (the other way a student could add history to a
+retired topic). A check that follows a session the student had already completed still goes
+through — that is finishing something that started while the topic was live, not starting
+something new. Tests: `tests/test_topic_lifecycle.py`.
 
 ## 5. Student workflow
 
@@ -303,6 +308,24 @@ Two smaller fixes came from the same audit:
   the whole-response analysis always had. Without them, a bare list of the
   topic's own headings ("gradient descent backpropagation loss weights")
   counted as an explanation of whichever concept was under discussion.
+- **Asking is not explaining — and not confessing either.** A teach-back is
+  evidence *because the student produced the explanation*. A question produces
+  none, yet it is written in the concept's own vocabulary and is semantically
+  about it, so *"sorry what does gradient descent mean?"* scored as
+  **covered**, and *"I don't understand the gradient, could you go over it?"*
+  credited the concept to a student who had just said they could not explain
+  it. Question sentences (a trailing `?`, or a closed list of request openers
+  like *"can you explain"* / *"I don't understand"*) are therefore excluded
+  from every similarity that decides evidence — for the student's benefit in
+  **both** directions: no credit for asking, and no accusation for asking
+  either, so *"is the gradient the same as the loss?"* is a question rather
+  than a claim of the misconception it names. Only the asking part is
+  discounted: an explanation that ends with *"does that make sense?"* keeps
+  its credit, and so does the answer after a rhetorical question.
+  `concept_coverage`, `semantic_correctness` and `explanation_depth` all
+  measure what the student **asserted**; `response_effort` still counts
+  everything they wrote, because asking a question is engagement — it is only
+  not a demonstration. Tests: `tests/test_evidence_safety.py`.
 
 ### Guided conversation (`nlp/conversation.py`)
 
@@ -594,6 +617,15 @@ filtering), so Prof. Arjun Rao's *Python Programming* dashboard can never show P
 Krishnan's *Neural Networks* data, and vice versa. Cross-subject isolation is asserted by
 regression tests (`tests/test_subject_isolation.py`). The student topic chooser is grouped by
 subject.
+
+The **lecture preparation step is faculty-facing too**, and was the one place the scoping did
+not reach. Preparing a lecture matches previously authored misconceptions against the new
+material and offers the close ones as suggestions; that catalog was read from the whole table,
+so a Python lecture mentioning error and weights was offered the Neural Networks teacher's
+authored misconceptions, ready to publish into a Python topic. A misconception belongs to a
+topic and a topic to a subject, so the catalog is now scoped the same way every other
+faculty-facing query is (archived topics excluded, as everywhere else) — a subject still reuses
+its **own** authored misconceptions, which is the point of having a catalog at all.
 
 ## 13. Demo accounts & data
 
