@@ -328,14 +328,18 @@ def pdf_to_notes(data: bytes) -> tuple[str, dict]:
     cleanup counts/examples and the raw extraction, so the review screen can
     show what was removed and offer a raw view.
     """
-    from .pdf_extract import extract_document, raw_text
+    from .pdf_extract import extract_document, format_page_ranges, raw_text
 
     doc = extract_document(data)
     raw = raw_text(doc)
     coverage = {k: doc[k] for k in
                 ("text_quality", "scanned", "page_count", "image_pages",
                  "image_page_count", "low_text_pages", "low_text_page_count",
-                 "text_page_count")}
+                 "text_page_count", "image_heavy_pages", "image_heavy_page_count")}
+    # readable page ranges, computed once here so every surface that shows them
+    # (the API, the review screen, the refusal message) says the same thing
+    coverage["image_pages_label"] = format_page_ranges(doc["image_pages"])
+    coverage["image_heavy_pages_label"] = format_page_ranges(doc["image_heavy_pages"])
     if doc["text_quality"] != "text":
         # Deliberately no markdown: a document whose pages are pictures has not
         # been ingested, and handing back the fraction that happened to carry

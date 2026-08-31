@@ -55,6 +55,18 @@ MIXED_PAGE_FLOOR = 2
 # Above this share of image-only pages the file is a scan, not a mixed document.
 SCANNED_PAGE_FRACTION = 0.8
 
+# --- pages that read fine but still hide content ---------------------------
+# A page can be perfectly extractable and STILL be missing the lesson: the EMC
+# deck has slides whose labels ("compute systems", "network", "storage") are
+# baked into a diagram while the surrounding prose extracts normally. Without
+# OCR we cannot know whether an image contains text — but we can say that a
+# large diagram is present, and let the teacher judge. This is a WARNING on an
+# accepted page, never a rejection, and is kept strictly separate from the
+# image-only pages that drive the mixed/scanned decision.
+IMAGE_HEAVY_FRACTION = 0.20      # an image this big is a diagram, not decoration
+FULL_PAGE_IMAGE_FRACTION = 0.90  # ...and this big is a slide background
+IMAGE_TEMPLATE_REPEAT = 0.5      # same image, same spot, on this share of pages = chrome
+
 # words on the same visual line differ by at most this many points vertically
 LINE_TOLERANCE = 2.5
 
@@ -162,8 +174,36 @@ def _extract_with_pdfplumber(data: bytes) -> dict:
                 if block:
                     blocks.append(block)
             pages.append({"number": pno, "width": float(page.width), "height": float(page.height),
-                          "blocks": blocks})
+                          "blocks": blocks, "images": _page_images(page)})
     return {"pages": pages, "extractor": "pdfplumber"}
+
+
+def _page_images(page) -> list[dict]:
+    """Embedded image rectangles, as a fraction of the page.
+
+    Only geometry — nothing here inspects pixels, so nothing here can claim an
+    image contains text.
+    """
+    area = float(page.width) * float(page.height)
+    if not area:
+        return []
+    out = []
+    for im in page.images or []:
+        try:
+            x0, top = float(im["x0"]), float(im["top"])
+            width = float(im["x1"]) - x0
+            height = float(im["bottom"]) - top
+        except (KeyError, TypeError, ValueError):  # pragma: no cover - odd PDFs
+            continue
+        if width <= 0 or height <= 0:
+            continue
+        out.append({
+            "fraction": round(width * height / area, 4),
+            # rounded size+position, so the same logo in the same corner on
+            # every slide collapses to one signature
+            "signature": (round(width), round(height), round(x0), round(top)),
+        })
+    return out
 
 
 def _extract_with_pypdf(data: bytes) -> dict:
@@ -178,7 +218,10 @@ def _extract_with_pypdf(data: bytes) -> dict:
             block = _make_block(raw, pno, order)
             if block:
                 blocks.append(block)
-        pages.append({"number": pno, "width": 0.0, "height": 0.0, "blocks": blocks})
+        # pypdf exposes no image geometry, so image-heavy detection is simply
+        # unavailable on this path rather than silently wrong
+        pages.append({"number": pno, "width": 0.0, "height": 0.0,
+                      "blocks": blocks, "images": []})
     return {"pages": pages, "extractor": "pypdf"}
 
 
@@ -247,6 +290,7 @@ def extract_document(data: bytes) -> dict:
         "body_size": _body_size(pages),
         "extractor": result["extractor"],
         **assess_text_coverage(pages),
+        **assess_image_content(pages),
     }
 
 
@@ -266,6 +310,47 @@ def format_page_ranges(numbers: list[int], limit: int = 6) -> str:
     if len(parts) > limit:
         return ", ".join(parts[:limit]) + f" and {len(parts) - limit} more"
     return ", ".join(parts)
+
+
+def assess_image_content(pages: list[dict]) -> dict:
+    """Pages carrying a large diagram whose text, if any, was not extracted.
+
+    Deliberately conservative, and deliberately NOT a claim about pixels:
+
+    * a picture repeated at the same size and position across the deck is
+      chrome — a logo or a slide background — not a diagram (the same
+      repetition argument the header/footer cleanup uses);
+    * an image covering essentially the whole page is a full-bleed background,
+      for the same reason;
+    * what is left, if it covers a substantial share of the page, is a diagram,
+      and any labels inside it are beyond a text extractor.
+
+    Pages with NO extractable text are not reported here — they are image-only
+    pages, a different and more serious problem handled by assess_text_coverage.
+    """
+    page_count = len(pages)
+    if not page_count:
+        return {"image_heavy_pages": [], "image_heavy_page_count": 0}
+
+    counts: dict[tuple, int] = {}
+    for page in pages:
+        for signature in {im["signature"] for im in page.get("images") or []}:
+            counts[signature] = counts.get(signature, 0) + 1
+    template = {sig for sig, n in counts.items()
+                if n >= max(2, IMAGE_TEMPLATE_REPEAT * page_count)}
+
+    heavy = []
+    for page in pages:
+        if sum(len(b["text"]) for b in page["blocks"]) < EMPTY_PAGE_CHARS:
+            continue  # image-only: already reported as lost content
+        biggest = max(
+            (im["fraction"] for im in page.get("images") or []
+             if im["signature"] not in template
+             and im["fraction"] < FULL_PAGE_IMAGE_FRACTION),
+            default=0.0)
+        if biggest >= IMAGE_HEAVY_FRACTION:
+            heavy.append(page["number"])
+    return {"image_heavy_pages": heavy, "image_heavy_page_count": len(heavy)}
 
 
 def assess_text_coverage(pages: list[dict]) -> dict:

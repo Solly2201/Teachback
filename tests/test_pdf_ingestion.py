@@ -458,3 +458,139 @@ def test_real_regex_lecture_is_identified_as_mixed_and_refused():
     with pytest.raises(ScannedPdfError) as exc:
         extract_material("Regular expression.pdf", REGEX_PDF.read_bytes())
     assert "15 of 22" in str(exc.value)
+
+
+# ==========================================================================
+# Pages that read fine but still hide content
+# ==========================================================================
+# A page can be perfectly extractable and STILL be missing the lesson: the EMC
+# deck has slides whose labels are baked into a diagram while the surrounding
+# prose extracts normally. Without OCR we cannot know whether the picture
+# contains words — only that a large diagram is there. So this is a WARNING on
+# an ACCEPTED page, and is kept strictly separate from the image-only pages
+# that drive the mixed/scanned refusal.
+
+from pdf_decks import diagram_deck  # noqa: E402
+from pdf_fixture import image  # noqa: E402
+
+from app.nlp.pdf_extract import assess_image_content  # noqa: E402
+
+
+# --- A. an ordinary text page raises nothing --------------------------------
+
+@pytest.mark.parametrize("name,deck", DECKS)
+def test_a_plain_text_deck_reports_no_image_heavy_pages(name, deck):
+    doc = extract_document(deck())
+    assert doc["image_heavy_page_count"] == 0
+    assert doc["image_heavy_pages"] == []
+
+
+# --- C/D. text + a large diagram is accepted, and flagged -------------------
+
+def test_a_page_with_text_and_a_large_diagram_is_accepted_and_flagged():
+    doc = extract_document(diagram_deck())
+    # accepted: every page has real text, so nothing is image-only
+    assert doc["text_quality"] == "text"
+    assert doc["image_page_count"] == 0
+    # ...but the diagram slide is reported as possibly incomplete
+    assert doc["image_heavy_pages"] == [3], doc["image_heavy_pages"]
+
+    text, report = pdf_to_notes(diagram_deck())
+    assert text.strip(), "an image-heavy deck must still ingest"
+    assert report["image_heavy_page_count"] == 1
+    assert report["image_heavy_pages_label"] == "3"
+    # the two categories never collapse into one another
+    assert report["image_page_count"] == 0
+    assert report["image_pages_label"] == ""
+
+
+def test_an_image_heavy_page_is_not_an_image_only_page():
+    """#3 (missing content, refused) and #4 (possibly incomplete, accepted) are
+    different things and must not be merged."""
+    doc = extract_document(diagram_deck())
+    assert set(doc["image_pages"]).isdisjoint(doc["image_heavy_pages"])
+    with_text_and_diagram = extract_material("deck.pdf", diagram_deck())
+    assert with_text_and_diagram[0].strip(), "an image-heavy deck is never refused"
+
+
+def test_repeated_chrome_and_full_bleed_backgrounds_are_not_diagrams():
+    """A logo in the same corner of every slide, and a full-page background,
+    are template furniture. Flagging them would train the teacher to ignore the
+    warning."""
+    doc = extract_document(diagram_deck())
+    # page 1 carries a full-page background, pages 1-4 all carry the same logo
+    assert 1 not in doc["image_heavy_pages"]
+    assert doc["pages"][0]["images"][0]["fraction"] >= 0.9, "fixture must be full-bleed"
+    assert 4 not in doc["image_heavy_pages"], "a small banner is decoration"
+
+
+def test_an_image_only_page_is_not_double_reported_as_image_heavy():
+    """A page with a big image and NO text is missing content, not merely
+    incomplete — it belongs to the refusal path alone."""
+    pdf = build_pdf([
+        [line("Regular Expressions", 50, 26, bold=True),
+         line("A pattern describes the shape of the text you want to match.", 120, 14),
+         line("Patterns combine literal characters with metacharacters.", 145, 14)],
+        [image(60, 60, 600, 420)],  # a photographed slide: image, no text
+    ])
+    doc = extract_document(pdf)
+    assert doc["image_pages"] == [2]
+    assert 2 not in doc["image_heavy_pages"], "an image-only page is not 'image-heavy'"
+
+
+def test_image_assessment_needs_no_text_extraction_to_be_safe():
+    """Called with pages that carry no image data at all (the pypdf fallback),
+    it must simply report nothing rather than fail."""
+    pages = [{"number": 1, "blocks": [{"text": "x" * 200}]},
+             {"number": 2, "blocks": [{"text": "y" * 200}], "images": []}]
+    assert assess_image_content(pages) == {"image_heavy_pages": [],
+                                           "image_heavy_page_count": 0}
+    assert assess_image_content([]) == {"image_heavy_pages": [],
+                                        "image_heavy_page_count": 0}
+
+
+# --- E. the mixed PDF is untouched by any of this ---------------------------
+
+def test_the_mixed_pdf_verdict_is_unchanged_by_image_heavy_detection():
+    doc = extract_document(mixed_deck())
+    assert doc["text_quality"] == "mixed"
+    assert doc["image_page_count"] == 15
+    assert doc["image_pages"] == list(REGEX_IMAGE_PAGES)
+    with pytest.raises(ScannedPdfError):
+        extract_material("lecture.pdf", mixed_deck())
+
+
+# --- the report keeps the page numbers, for both categories -----------------
+
+def test_the_report_labels_both_kinds_of_page_for_the_teacher():
+    _, mixed_report = pdf_to_notes(mixed_deck())
+    assert mixed_report["image_pages_label"] == "1-8, 10-16"
+    _, diagram_report = pdf_to_notes(diagram_deck())
+    assert diagram_report["image_heavy_pages_label"] == "3"
+    for report in (mixed_report, diagram_report):
+        for key in ("image_pages_label", "image_heavy_pages_label",
+                    "image_heavy_pages", "image_heavy_page_count"):
+            assert key in report
+
+
+def test_the_extract_endpoint_returns_the_image_heavy_pages():
+    payload = base64.b64encode(diagram_deck()).decode()
+    r = client.post("/api/lectures/extract",
+                    json={"filename": "deck.pdf", "content_base64": payload})
+    assert r.status_code == 200
+    report = r.json()["report"]
+    assert report["image_heavy_page_count"] == 1
+    assert report["image_heavy_pages_label"] == "3"
+    assert report["image_page_count"] == 0
+
+
+@pytest.mark.skipif(not CLOUD_PDF.exists(), reason="real Cloud Computing PDF not present")
+def test_real_cloud_deck_flags_its_diagram_slides_without_refusing():
+    doc = extract_document(CLOUD_PDF.read_bytes())
+    assert doc["text_quality"] == "text", "it must still ingest"
+    assert doc["image_page_count"] == 0
+    # the deck is diagram-heavy, but only a minority of its pages
+    assert 5 <= doc["image_heavy_page_count"] <= 40, doc["image_heavy_page_count"]
+    assert 5 in doc["image_heavy_pages"], "the infrastructure diagram slide"
+    # the logo on all 108 pages and the 26 full-bleed backgrounds are excluded
+    assert doc["image_heavy_page_count"] < doc["page_count"] / 2

@@ -325,6 +325,17 @@ TXT/MD ------------------------------------------------------------------>
    Measured on the two real lectures: the 108-page EMC Cloud Computing deck has **0** image-only
    pages (minimum 145 characters per page) and still ingests; the *Regular expression* lecture
    is identified as `mixed` with image pages `1-8, 10-16` and is refused.
+5. **Image-heavy pages** are a separate, weaker signal, and a warning rather than a refusal. A
+   page can extract perfectly and still be missing the lesson: the EMC deck has slides whose
+   labels are baked into a diagram while the surrounding prose reads fine. Using only the image
+   geometry pdfplumber already reports, a page is flagged when it carries an image covering
+   ≥20% of the page that is neither a full-bleed background (≥90%) nor template chrome (the
+   same picture, same size, same position, on ≥50% of pages — the repetition argument the
+   header/footer cleanup already uses). Nothing inspects pixels, so the wording never claims
+   the picture contains text: *"page 5 contains a large diagram; labels inside it may not have
+   been extracted."* On the real deck this flags **18 of 108** pages, correctly ignoring the
+   logo that appears on all 108 and the 26 full-bleed backgrounds. Image-only pages are
+   excluded from this list — they are missing content, which is a different and worse problem.
 
 The review screen shows *"Extracted from 10 pages. Removed 30 repeated header/footer,
 page-number and copyright lines"* with examples, and a **View raw extraction** toggle for
@@ -772,10 +783,15 @@ happening in a student's mind.
   the text, or the prepared-note workflow. Adding OCR would mean a system binary or a large
   dependency, which this project deliberately avoids.
 - The mixed/scanned tolerance is a heuristic on page counts, not on meaning: one image-only
-  diagram slide in a twenty-page deck is accepted (and reported) on the assumption that it is
-  a decoration rather than the lesson. If that one page *is* the lesson, its content is
-  silently absent from the draft — the report names the page, but nothing forces the teacher
-  to look.
+  diagram slide in a twenty-page deck is accepted on the assumption that it is a decoration
+  rather than the lesson. The review screen names the page in a prominent warning, but nothing
+  forces the teacher to act on it.
+- Image-heavy detection is geometry only. It cannot tell a photograph from a labelled diagram,
+  so a slide with a large decorative picture is flagged alongside one whose labels carry the
+  lesson — and conversely a diagram drawn with vector shapes rather than an embedded image is
+  not flagged at all. A full-bleed image is always treated as a background, so a genuinely
+  full-page screenshot with a caption is missed. All of this is why it is a warning and never
+  a refusal.
 - The boilerplate cleanup is multi-signal and conservative, which means it errs towards
   *keeping* text: a footer that appears on fewer than half the pages, or one typeset as large
   as the body text, will survive into the notes for the teacher to delete. Conversely a

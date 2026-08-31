@@ -39,14 +39,38 @@ function IngestionReport({ report, rawText }) {
           : 'No repeated page decoration was found.'}
         {report.empty_pages?.length > 0 && ` ${report.empty_pages.length} page(s) contained only boilerplate and were skipped.`}
       </div>
-      {/* A page that yielded no selectable text is a picture: its content was
-          not read. Small numbers are tolerated but never hidden. */}
+      {/* Two different problems, deliberately never merged:
+          - image-only pages yielded NO text at all; their content is missing.
+          - image-heavy pages read fine but carry a large diagram whose labels
+            a text extractor cannot reach. We cannot know whether the picture
+            contains words, so the wording stays conservative. */}
       {report.image_page_count > 0 && (
-        <div className="text-amber-800">
-          ⚠ {report.image_page_count} page{report.image_page_count === 1 ? '' : 's'} contained no
-          selectable text (likely diagrams or scans) and could not be read.
-          Anything taught only on {report.image_page_count === 1 ? 'that page' : 'those pages'} is
-          not part of this draft.
+        <div className="border-l-4 border-amber-500 bg-amber-50 text-amber-900 rounded-r p-3">
+          <div className="font-bold">
+            ⚠ {report.image_page_count} page{report.image_page_count === 1 ? '' : 's'} could not be read
+            {report.image_pages_label ? ` (page${report.image_page_count === 1 ? '' : 's'} ${report.image_pages_label})` : ''}
+          </div>
+          <div className="mt-0.5">
+            {report.image_page_count === 1 ? 'That page' : 'Those pages'} contained no selectable
+            text — {report.image_page_count === 1 ? 'it is' : 'they are'} most likely
+            {report.image_page_count === 1 ? ' a scan or a full-page image' : ' scans or full-page images'}.
+            <strong> Anything taught there is missing from this draft.</strong> Add it by pasting the
+            text, or re-export the slides with selectable text.
+          </div>
+        </div>
+      )}
+      {report.image_heavy_page_count > 0 && (
+        <div className="border-l-4 border-sky-500 bg-sky-50 text-sky-900 rounded-r p-3">
+          <div className="font-bold">
+            ⓘ {report.image_heavy_page_count} page{report.image_heavy_page_count === 1 ? '' : 's'} contain
+            a large diagram or image
+            {report.image_heavy_pages_label ? ` (page${report.image_heavy_page_count === 1 ? '' : 's'} ${report.image_heavy_pages_label})` : ''}
+          </div>
+          <div className="mt-0.5">
+            The text on {report.image_heavy_page_count === 1 ? 'that page' : 'those pages'} was read
+            normally, but any labels <em>inside</em> the picture may not have been extracted. Worth a
+            glance if the diagram carried part of the explanation.
+          </div>
         </div>
       )}
       {removed > 0 && (

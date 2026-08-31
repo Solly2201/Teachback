@@ -10,7 +10,7 @@ legitimate concept ("Cloud Computing") that genuinely recurs as a slide title.
 problems, so the tests can assert that nothing in the pipeline is tuned to one
 particular deck.
 """
-from pdf_fixture import build_pdf, line
+from pdf_fixture import PAGE_HEIGHT, PAGE_WIDTH, build_pdf, image, line
 
 HEADER = "Cloud Infrastructure and Services"
 FOOTER = "Module 1: Introduction to Cloud Computing"
@@ -200,5 +200,51 @@ def sparse_but_readable_deck() -> bytes:
         _text_page(5, "Quantifiers",
                    ["A quantifier says how many times the previous item may repeat.",
                     "The plus quantifier requires at least one repetition."]),
+    ]
+    return build_pdf(pages)
+
+
+def diagram_deck() -> bytes:
+    """A readable deck whose teaching partly lives inside a diagram.
+
+    This is the Cloud Computing deck's shape: every page extracts normally, but
+    one slide's labels ("compute systems", "network", "storage") are baked into
+    a picture that no text extractor can reach. The page is NOT image-only —
+    it must be accepted, and flagged as possibly incomplete.
+
+    Also carries the two things that must NOT be flagged: a corner logo that
+    repeats on every page, and a full-bleed background on one slide.
+    """
+    logo = image(660, 12, 44, 44)          # same spot on every page = chrome
+    pages = [
+        # 1 — full-bleed background: a template, not a diagram
+        _chrome(1) + [
+            image(0, 0, PAGE_WIDTH, PAGE_HEIGHT),
+            logo,
+            line("Cloud Infrastructure", 150, 34, bold=True),
+            line("An introduction to the layers a cloud provider manages.", 210, 16),
+        ],
+        # 2 — ordinary text slide
+        _chrome(2) + [
+            logo,
+            line("Cloud Reference Model", 50, 26, bold=True),
+            line("The reference model groups the resources a provider manages", 120, 14),
+            line("into layers, and each layer hides the detail of the one below.", 142, 14),
+        ],
+        # 3 — the case this fixture exists for: real text AND a large diagram
+        _chrome(3) + [
+            logo,
+            line("Cloud Infrastructure Components", 50, 26, bold=True),
+            line("The diagram below shows how the components fit together.", 110, 14),
+            image(90, 150, 520, 230),
+        ],
+        # 4 — text plus a decorative banner too small to matter
+        _chrome(4) + [
+            logo,
+            image(22, 60, 351, 40),
+            line("Measured Service", 110, 26, bold=True),
+            line("Cloud systems meter resource use so that usage can be billed.", 170, 14),
+            line("Metering is what makes pay-per-use possible.", 192, 14),
+        ],
     ]
     return build_pdf(pages)

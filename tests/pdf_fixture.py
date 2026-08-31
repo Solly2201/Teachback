@@ -7,10 +7,14 @@ text, its bounding box and its font size — the exact signals the ingestion
 pipeline depends on — so the fixtures exercise the real extractor rather than
 a mock.
 
-    build_pdf([[line(...), line(...)], [line(...)]])  -> bytes
+    build_pdf([[line(...), image(...)], [line(...)]])  -> bytes
 
 Coordinates are given in points from the TOP-LEFT of the page, which is how
 slides are usually described and how pdfplumber reports them back.
+
+``image()`` embeds a real (tiny, grey) XObject at a given size and position, so
+the image-heavy detection is tested against genuine PDF image objects with real
+bounding boxes rather than against a stub.
 """
 from __future__ import annotations
 
@@ -23,14 +27,30 @@ def line(text: str, y: float, size: float = 14.0, x: float = 48.0, bold: bool = 
     return {"text": text, "y": y, "size": size, "x": x, "bold": bold}
 
 
+def image(x: float, y: float, width: float, height: float) -> dict:
+    """One embedded image, positioned y points below the top of the page."""
+    return {"kind": "image", "x": x, "y": y, "w": width, "h": height}
+
+
 def _escape(text: str) -> bytes:
     out = text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
     return out.encode("cp1252", errors="replace")
 
 
 def _content_stream(items: list[dict], height: float) -> bytes:
-    parts = [b"BT"]
-    for it in items:
+    text_items = [it for it in items if it.get("kind") != "image"]
+    image_items = [it for it in items if it.get("kind") == "image"]
+    parts = []
+    for idx, it in enumerate(image_items, start=1):
+        # PDF space has its origin bottom-left; the fixture takes y from the top
+        bottom = height - it["y"] - it["h"]
+        parts.append(
+            b"q %s 0 0 %s %s %s cm /Im%d Do Q"
+            % (f"{it['w']:.2f}".encode(), f"{it['h']:.2f}".encode(),
+               f"{it['x']:.2f}".encode(), f"{bottom:.2f}".encode(), idx)
+        )
+    parts.append(b"BT")
+    for it in text_items:
         font = b"/F2" if it.get("bold") else b"/F1"
         baseline = height - it["y"] - it["size"]
         parts.append(
@@ -61,15 +81,27 @@ def build_pdf(pages: list[list[dict]], width: float = PAGE_WIDTH,
     font_bold = add(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
                     b"/Encoding /WinAnsiEncoding >>")
 
+    # one shared 2x2 grey pixel map, reused by every embedded image
+    pixels = bytes([200, 120, 90, 30])
+    image_obj = add(b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 "
+                    b"/ColorSpace /DeviceGray /BitsPerComponent 8 /Length %d >>\n"
+                    b"stream\n%s\nendstream" % (len(pixels), pixels))
+
     page_nums: list[int] = []
     for items in pages:
         stream = _content_stream(items, height)
         content_num = add(b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream))
+        n_images = sum(1 for it in items if it.get("kind") == "image")
+        xobjects = b""
+        if n_images:
+            entries = b" ".join(b"/Im%d %d 0 R" % (i, image_obj)
+                                for i in range(1, n_images + 1))
+            xobjects = b" /XObject << %s >>" % entries
         page_num = add(
             b"<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %s %s] "
-            b"/Resources << /Font << /F1 %d 0 R /F2 %d 0 R >> >> /Contents %d 0 R >>"
+            b"/Resources << /Font << /F1 %d 0 R /F2 %d 0 R >>%s >> /Contents %d 0 R >>"
             % (pages_num, f"{width:.2f}".encode(), f"{height:.2f}".encode(),
-               font_regular, font_bold, content_num)
+               font_regular, font_bold, xobjects, content_num)
         )
         page_nums.append(page_num)
 
