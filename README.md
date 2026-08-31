@@ -138,6 +138,63 @@ retired topic). A check that follows a session the student had already completed
 through — that is finishing something that started while the topic was live, not starting
 something new. Tests: `tests/test_topic_lifecycle.py`.
 
+### Student Evidence: the teacher checking the system's work
+
+TeachBack assists the teacher; it does not replace them. The **Student Evidence** screen
+(`/evidence`) exists so a teacher never has to take the automated reading on faith. It walks
+
+> student → session → individual response → the question asked → what the system concluded
+
+and each exchange shows the **question asked**, the **student's response verbatim**, and the
+**system interpretation** as three separately labelled blocks — the student's words quoted, the
+interpretation in its own panel with a plain-language reason (*"The student said “…”, which
+matches how the lecture explains this concept"*) and the teacher's own lecture text beside it to
+check the claim against. Nothing important is hover-only: selecting a student opens a real panel.
+
+The wording is for verification, not debugging: no similarity scores, thresholds, feature values
+or HMM posteriors appear anywhere in it (asserted by a test). The session view keeps the five
+kinds of information in five labelled blocks and never merges them into one "mastery" number —
+what the student **said**, what the NLP **inferred**, what the knowledge check **showed**, what
+the HMM **estimated** over their whole history, and what the student **reported** about
+themselves. Both endpoints require the subject and check that the topic belongs to it, so a
+topic or session id cannot be used to reach another teacher's students.
+
+### Closing an evaluation: the raw responses do not live forever
+
+`POST /api/topics/{id}/close-evaluation` is a **third** lifecycle, deliberately distinct from
+the two above and given its own `evaluation_closed_at` column rather than overloading
+`archived_at`:
+
+| | what it means | raw responses |
+|---|---|---|
+| **delete** | the topic never happened | gone with the topic |
+| **archive** | the topic is retired from the active lists | untouched |
+| **close** | the *evaluation* is finished | **permanently deleted** |
+
+Free-text answers are the most sensitive and by far the bulkiest thing the database holds, and
+once the teacher has read them they have served their purpose. So closure removes the individual
+`Response` rows, the written takeaway (`summary_text`) and any written lecture comment
+(`feedback_text`) — and keeps everything structured that was drawn from them: concept status,
+relationship status, misconceptions detected and resolved, `summary_insights`, the HMM
+observation and state, the self-reports, the lecture pace and feedback chips, knowledge-check
+results, completed activities and every progress record. The session row itself is never deleted.
+
+Closure is one transaction: either the topic is marked closed **and** every raw response is
+gone, or nothing changed — a half-closed evaluation would leave a topic still accepting sessions
+while some students' answers had already been destroyed. Once closed, no new TeachBack session
+may start, no further answer may be submitted to an unfinished one, and no new standalone
+knowledge check may begin; a check that follows a session the student had already completed
+still goes through, because that is finishing rather than starting. The topic stays in the
+teacher's lists (closure is not archiving) and every dashboard aggregate keeps counting it, but
+the student topic chooser drops it — `GET /api/topics?startable=true` — so it is never offered
+as a dead end.
+
+The confirmation names the destruction rather than hiding behind "Archive": it lists what will be
+permanently deleted and what will be kept, and says in as many words that raw free-text responses
+cannot be recovered. Afterwards the topic reads **Evaluation closed / Raw student responses
+removed** in Topic Management and on the evidence screen, where the aggregate results remain
+readable. Tests: `tests/test_evaluation_closure.py`.
+
 ## 5. Student workflow
 
 1. Attend the lecture.
@@ -675,7 +732,8 @@ python -m pytest tests -q      # NLP, conversation, PDF ingestion, concept quali
                                # lecture + topic lifecycle (delete/archive/restore),
                                # evidence safety, HMM validation + artifact integrity,
                                # subject isolation, quiz, feedback, recommendations,
-                               # activities, test-database isolation, API end-to-end
+                               # activities, evidence inspection + evaluation closure,
+                               # test-database isolation, API end-to-end
 
 python scripts/evaluate_nlp.py         # answer-evaluator metrics on the labelled set
 python scripts/evaluate_nlp.py --tune  # threshold calibration sweep
@@ -762,7 +820,8 @@ teachback/
 ├── frontend/                React + Vite + Tailwind CSS
 │   └── src/
 │       ├── pages/           Student Dashboard, TeachBack, Activity, Progress,
-│       │                    Teacher Dashboard, Lecture TeachBacks, Topic Management
+│       │                    Teacher Dashboard, Lecture TeachBacks, Topic Management,
+│       │                    Student Evidence (response inspection + closure)
 │       ├── components/      layout, state badges, timelines, teacher/subject switcher
 │       └── services/        API client
 ├── data/

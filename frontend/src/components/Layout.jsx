@@ -10,6 +10,7 @@ const teacherNav = [
   { to: '/', label: 'Class Overview', icon: '⌂' },
   { to: '/lectures', label: 'Lecture TeachBacks', icon: '▤' },
   { to: '/topics', label: 'Topic Management', icon: '☰' },
+  { to: '/evidence', label: 'Student Evidence', icon: '⌕' },
 ]
 
 export default function Layout({ user, onSignOut, children }) {

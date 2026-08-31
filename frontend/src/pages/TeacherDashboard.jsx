@@ -45,7 +45,10 @@ export default function TeacherDashboard() {
           After a lecture, create a TeachBack from your material — the system drafts the concepts,
           you review them, students explain what they understood.
         </p>
-        <Link to="/lectures" className="btn-primary whitespace-nowrap">+ Create Lecture TeachBack</Link>
+        <div className="flex gap-3 shrink-0">
+          <Link to="/evidence" className="btn-secondary whitespace-nowrap">Student evidence</Link>
+          <Link to="/lectures" className="btn-primary whitespace-nowrap">+ Create Lecture TeachBack</Link>
+        </div>
       </div>
 
       <div className="grid sm:grid-cols-3 gap-4">
@@ -262,7 +265,9 @@ export default function TeacherDashboard() {
             <tbody className="divide-y divide-zinc-100">
               {data.topic_stats.map((t) => (
                 <tr key={t.id} className="hover:bg-zinc-50">
-                  <td className="px-4 py-2.5 font-medium text-charcoal">{t.name}</td>
+                  <td className="px-4 py-2.5 font-medium text-charcoal">
+                    <Link to="/evidence" className="hover:text-brand hover:underline">{t.name}</Link>
+                  </td>
                   <td className="px-4 py-2.5 tabular-nums">{t.sessions}</td>
                   <td className="px-4 py-2.5 tabular-nums">{Math.round(t.avg_concept_coverage * 100)}%</td>
                   <td className="px-4 py-2.5 tabular-nums">{Math.round(t.avg_misconception_score * 100)}%</td>

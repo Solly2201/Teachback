@@ -28,6 +28,10 @@ from .helpers import (DEMONSTRATED, NEEDS_CLARIFICATION, NOT_DISCUSSED,
 
 router = APIRouter(prefix="/api/sessions", tags=["teachback"])
 
+# The teacher has finished evaluating this topic and its raw responses have
+# been deleted; nothing new may be recorded against it (see api/topics.py).
+EVALUATION_CLOSED = "The evaluation for this lecture is closed. No new TeachBack can be recorded."
+
 
 class StartIn(BaseModel):
     student_id: int
@@ -74,6 +78,8 @@ def start_session(data: StartIn, db: Session = Depends(get_db)):
         # the lecture behind this topic was removed; existing sessions stay
         # readable, but no new one may start on retired material
         raise HTTPException(400, "This lecture is no longer available for TeachBack.")
+    if topic.evaluation_closed_at is not None:
+        raise HTTPException(400, EVALUATION_CLOSED)
 
     tdef = topic_def(topic)
     plan = build_plan(tdef)
@@ -105,6 +111,8 @@ def respond(session_id: int, data: RespondIn, db: Session = Depends(get_db)):
         raise HTTPException(404, "Session not found")
     if session.completed:
         raise HTTPException(400, "Session already completed")
+    if session.topic is not None and session.topic.evaluation_closed_at is not None:
+        raise HTTPException(400, EVALUATION_CLOSED)
     plan = session.plan or build_plan(topic_def(session.topic))
     if plan.get("done"):
         raise HTTPException(400, "The conversation is over; finish the session")
@@ -215,6 +223,8 @@ def finish(session_id: int, data: FinishIn, db: Session = Depends(get_db)):
         raise HTTPException(400, "No responses submitted yet")
     if session.completed:
         raise HTTPException(400, "Session already completed")
+    if session.topic is not None and session.topic.evaluation_closed_at is not None:
+        raise HTTPException(400, EVALUATION_CLOSED)
     if not hmm_available():
         raise HTTPException(503, "HMM model not trained yet - run scripts/build_all.py")
 

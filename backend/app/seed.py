@@ -50,6 +50,8 @@ def _migrate():
         ("lectures", "archived_at", "DATETIME"),
         ("lectures", "ingestion", "JSON"),
         ("topics", "archived_at", "DATETIME"),
+        # teacher-controlled evaluation closure (raw responses removed)
+        ("topics", "evaluation_closed_at", "DATETIME"),
     ]
     with engine.connect() as conn:
         for table, col, ddl in additions:

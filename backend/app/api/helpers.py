@@ -144,6 +144,113 @@ def topic_def(topic: Topic) -> dict:
     }
 
 
+# --- what one stored response is evidence of, in the teacher's language ----
+# TeachBack assists the teacher; it does not replace them. So a teacher must be
+# able to read the student's exact words next to what the system made of them,
+# and judge for themselves. These helpers turn the stored analysis of ONE
+# response into that account.
+#
+# The wording is deliberately about the ANSWER, never about the machinery: no
+# similarity scores, thresholds, feature values or posteriors appear here. What
+# a teacher needs in order to disagree with the system is the sentence it
+# matched and the lecture text it matched against — both of which are readable.
+
+CONCEPT_STATUS_LABEL = {
+    "covered": "Evidence for",
+    "partial": "Partial evidence for",
+    "missing": "No evidence for",
+}
+
+
+def _concept_why(result: dict, status: str) -> str:
+    """Plain-language reason, anchored in the student's own sentence."""
+    sentence = (result.get("best_sentence") or "").strip()
+    facts = result.get("facts_matched") or []
+    if status == "missing":
+        return "Nothing in this answer explained this concept."
+    quoted = f'The student said \u201c{sentence}\u201d, which ' if sentence else "This answer "
+    if status == "covered":
+        why = quoted + "matches how the lecture explains this concept."
+    else:
+        why = quoted + "is about this concept but stops short of explaining it."
+    if facts:
+        why += " It also states " + "; ".join(f'\u201c{f}\u201d' for f in facts[:2]) + " from the lecture."
+    return why
+
+
+def _relationship_why(result: dict) -> str:
+    sentence = (result.get("matched_sentence") or "").strip()
+    status = result.get("status")
+    if status == "demonstrated":
+        return (f'The student said \u201c{sentence}\u201d, which expresses this connection.'
+                if sentence else "This answer expressed the connection.")
+    if status == "contradicted":
+        return (f'The student said \u201c{sentence}\u201d, which states this connection the '
+                "wrong way round." if sentence else "This answer stated the connection wrongly.")
+    if status == "partial":
+        return (f'The student said \u201c{sentence}\u201d, which touches on the connection '
+                "without establishing it." if sentence else
+                "This answer touched on the connection without establishing it.")
+    return "This answer said nothing either way about this connection."
+
+
+def response_evidence(response, topic: Topic | None = None) -> dict:
+    """One exchange: the question asked, the student's exact words, and what
+    the system concluded — kept visibly separate from each other."""
+    analysis = response.analysis or {}
+    turn = analysis.get("turn") or {}
+    by_name = {c["name"]: c for c in (analysis.get("concepts") or [])}
+    # the teacher's own reference text for each concept, so the claim can be
+    # checked against the material rather than taken on faith
+    reference = {c.name: c.description for c in (topic.concepts if topic else [])}
+
+    concepts = []
+    for name, result in by_name.items():
+        status = result.get("status", "missing")
+        concepts.append({
+            "name": name,
+            "status": status,
+            "status_label": CONCEPT_STATUS_LABEL.get(status, "No evidence for"),
+            "why": _concept_why(result, status),
+            "facts_matched": result.get("facts_matched") or [],
+            "lecture_reference": reference.get(name, ""),
+        })
+    # what the student demonstrated first, what they did not last
+    order = {"covered": 0, "partial": 1, "missing": 2}
+    concepts.sort(key=lambda c: (order.get(c["status"], 3), c["name"]))
+
+    relationships = [
+        {"source": r["source"], "label": r.get("label", "relates to"), "target": r["target"],
+         "status": relationship_status(r.get("status")),
+         "status_label": REL_STATUS_LABEL[relationship_status(r.get("status"))],
+         "why": _relationship_why(r)}
+        for r in (analysis.get("relationships") or [])
+        # a connection nothing was said about is not worth a line per response
+        if r.get("status") != "not_shown"
+    ]
+
+    miscon = turn.get("misconception") or None
+    return {
+        "exchange_no": response.exchange_no,
+        "question": response.prompt or "",
+        "answer": response.text or "",
+        "word_count": (analysis.get("word_count")
+                       or len((response.text or "").split())),
+        "concepts": concepts,
+        "relationships": relationships,
+        "misconception": ({"name": miscon.get("name"),
+                           "clarification": miscon.get("clarification", "")}
+                          if miscon else None),
+        "resolved_misconception": turn.get("resolved_misconception"),
+        # did this exchange move any concept forward at all?
+        "contributed_to_coverage": any(c["status"] in ("covered", "partial") for c in concepts),
+        # the encouragement the student actually saw, so the teacher knows what
+        # was said back to them
+        "shown_to_student": turn.get("feedback") or "",
+        "followup_asked": ((turn.get("followup") or {}) or {}).get("text") or None,
+    }
+
+
 def observation_evidence(o: Observation) -> list[str]:
     """Short human-readable bullets explaining what this session showed.
 

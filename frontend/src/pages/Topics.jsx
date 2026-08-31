@@ -146,8 +146,20 @@ export default function Topics() {
                 aria-label={`Open ${t.name} for editing`}
                 className="text-left w-full flex-1"
               >
-                <div className="font-bold text-charcoal group-hover:text-brand break-words">{t.name}</div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-bold text-charcoal group-hover:text-brand break-words min-w-0">{t.name}</div>
+                  {t.evaluation_closed && (
+                    <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border bg-amber-50 text-amber-800 border-amber-200">
+                      Evaluation closed
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-charcoal-light mt-1 line-clamp-2">{t.description}</p>
+                {t.evaluation_closed && (
+                  <p className="text-xs text-charcoal-light mt-1">
+                    Raw student responses removed. Results stay on Student Evidence.
+                  </p>
+                )}
                 <div className="text-xs text-charcoal-light mt-3">
                   {t.concept_count} concepts · {t.relationship_count ?? 0} relationships · {t.misconception_count} misconceptions · {t.activity_count} activities
                 </div>

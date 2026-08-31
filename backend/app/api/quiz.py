@@ -228,8 +228,12 @@ def submit_quiz(quiz_id: int, data: SubmitIn, db: Session = Depends(get_db)):
     # this only blocks a fresh, standalone attempt on retired material, the
     # one path that could still add history to an archived topic.
     quiz_topic = db.get(Topic, quiz.topic_id)
-    if data.session_id is None and quiz_topic is not None and quiz_topic.archived_at is not None:
-        raise HTTPException(400, "This lecture is no longer available for TeachBack.")
+    if data.session_id is None and quiz_topic is not None:
+        if quiz_topic.archived_at is not None:
+            raise HTTPException(400, "This lecture is no longer available for TeachBack.")
+        if quiz_topic.evaluation_closed_at is not None:
+            raise HTTPException(
+                400, "The evaluation for this lecture is closed. No new TeachBack can be recorded.")
     # basic referential consistency: the knowledge check must belong to the
     # session it claims to follow, and that session must be this student's
     session = db.get(TeachSession, data.session_id) if data.session_id else None

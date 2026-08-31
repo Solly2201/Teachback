@@ -59,6 +59,13 @@ class Topic(Base):
     # its rows stay in place so historical sessions, observations and quiz
     # attempts remain readable and keep valid foreign keys.
     archived_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, default=None)
+    # Set when the teacher closes the evaluation for this topic. A DIFFERENT
+    # lifecycle from archiving: the topic stays in the active lists and its
+    # aggregates keep counting, but no new TeachBack may start and the raw
+    # student responses have been permanently deleted (see api/topics.py).
+    # Deliberately its own column rather than an overload of archived_at —
+    # a topic can be archived, closed, both or neither.
+    evaluation_closed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True, default=None)
 
     concepts: Mapped[list["Concept"]] = relationship(
         back_populates="topic", cascade="all, delete-orphan", order_by="Concept.position"

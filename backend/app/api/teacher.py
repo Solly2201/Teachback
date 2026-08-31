@@ -1,24 +1,34 @@
-"""Teacher dashboard aggregates and meta/evaluation endpoints.
+"""Teacher dashboard aggregates, evidence inspection, and meta endpoints.
 
 Every faculty-facing aggregate is scoped by subject: when the teacher/subject
 switcher selects a subject, only observations, sessions, topics, misconceptions
 and feedback belonging to that subject's topics are aggregated. Scoping happens
 in these queries, not in the frontend, so one subject's data can never leak
 into another subject's dashboard.
+
+The evidence endpoints are the teacher-oversight surface: TeachBack assists the
+teacher, it does not replace them, so a teacher can read a student's exact
+answers next to what the system concluded from them and judge for themselves.
+They are scoped the same way — the subject is required and the topic must
+belong to it, so a topic or session id cannot be used to reach another
+teacher's students.
 """
 import json
 from collections import Counter, defaultdict
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..config import EVAL_RESULTS_PATH, HMM_MAPPING_PATH
 from ..database import get_db
-from ..models import (Observation, Quiz, QuizAnswer, QuizAttempt, Student,
-                      TeachSession, Topic)
+from ..models import (ActivityCompletion, Observation, Quiz, QuizAnswer, QuizAttempt,
+                      Response, Student, TeachSession, Topic)
+from ..recommend.rules import recommend
 from ..states import (FEATURE_NAMES, STATE_KEYS, STATE_NAMES, STATE_PROFILES,
                       STATE_STUDENT_DESCRIPTIONS, STATE_STUDENT_NAMES)
-from .helpers import observation_out
+from .activities import completion_out
+from .helpers import (observation_out, relationship_summary, response_evidence,
+                      student_state_label, topic_def)
 
 router = APIRouter(prefix="/api", tags=["teacher", "meta"])
 
@@ -200,6 +210,191 @@ def teacher_overview(subject_id: int | None = None, db: Session = Depends(get_db
         "topic_feedback": topic_feedback,
         "knowledge_checks": knowledge_checks,
         "recent_interactions": recent,
+    }
+
+
+# ---------------------------------------------------------------------------
+# evidence inspection: the teacher checking the system's work
+# ---------------------------------------------------------------------------
+# A teacher must never have to take the automated interpretation on faith. These
+# two endpoints let them walk Student -> session -> individual response -> the
+# question asked -> what the system concluded, with the student's exact words
+# always shown separately from the system's reading of them.
+#
+# Once the evaluation for a topic is closed the raw responses are permanently
+# gone (see api/topics.py). These endpoints then report that plainly instead of
+# pretending there was nothing to show: `responses_available` is false and
+# `responses` is empty, while every structured conclusion drawn from them
+# remains readable.
+
+
+def _scoped_topic(db: Session, topic_id: int, subject_id: int) -> Topic:
+    """A topic, but only through the subject that owns it.
+
+    subject_id is required rather than optional: an endpoint that returns
+    student answers must not be reachable by guessing an id from outside the
+    subject the teacher is looking at.
+    """
+    topic = db.get(Topic, topic_id)
+    if topic is None or topic.subject_id != subject_id:
+        raise HTTPException(404, "Topic not found in this subject")
+    return topic
+
+
+def _self_report(features: list | None) -> dict | None:
+    """The three numbers the student reported about themselves.
+
+    Kept as its own block everywhere it is shown: a self-report is what the
+    student said about the session, never evidence of understanding.
+    """
+    if not features or len(features) < 8:
+        return None
+    return {"attention": round(features[5] * 10, 1),
+            "confidence": round(features[6] * 10, 1),
+            "difficulty": round(features[7] * 10, 1)}
+
+
+def _session_row(db: Session, ts: TeachSession, obs: Observation | None) -> dict:
+    plan_concepts = (ts.plan or {}).get("concepts", [])
+    demonstrated = sum(1 for c in plan_concepts if c.get("status") == "covered")
+    return {
+        "session_id": ts.id,
+        "student_id": ts.student_id,
+        "student_name": ts.student.name if ts.student else "?",
+        "roll_no": (ts.student.roll_no or "") if ts.student else "",
+        "program": (ts.student.program or "") if ts.student else "",
+        "started_at": ts.started_at.isoformat() if ts.started_at else None,
+        "completed": ts.completed,
+        "exchange_count": ts.exchange_count,
+        "concepts_demonstrated": demonstrated,
+        "concepts_total": len(plan_concepts),
+        "state_label": obs.state_label if obs else None,
+        "misconceptions": (obs.misconception_names or []) if obs else [],
+        "has_takeaway": bool((ts.summary_text or "").strip()),
+    }
+
+
+@router.get("/teacher/topics/{topic_id}/evidence")
+def topic_evidence(topic_id: int, subject_id: int, db: Session = Depends(get_db)):
+    """Every TeachBack session on one topic, for the teacher to inspect."""
+    topic = _scoped_topic(db, topic_id, subject_id)
+    sessions = (db.query(TeachSession)
+                .filter(TeachSession.topic_id == topic.id)
+                .order_by(TeachSession.started_at.desc(), TeachSession.id.desc()).all())
+    obs_by_session = {o.session_id: o for o in
+                      db.query(Observation)
+                      .filter(Observation.topic_id == topic.id,
+                              Observation.session_id.isnot(None)).all()}
+    closed = topic.evaluation_closed_at is not None
+    return {
+        "topic_id": topic.id,
+        "topic_name": topic.name,
+        "subject_id": topic.subject_id,
+        "subject_name": topic.subject.name if topic.subject else None,
+        "archived": topic.archived_at is not None,
+        "evaluation_closed": closed,
+        "evaluation_closed_at": (topic.evaluation_closed_at.isoformat()
+                                 if topic.evaluation_closed_at else None),
+        # after closure there is nothing raw left to open
+        "responses_available": not closed,
+        "session_count": len(sessions),
+        "sessions": [_session_row(db, ts, obs_by_session.get(ts.id)) for ts in sessions],
+    }
+
+
+@router.get("/teacher/sessions/{session_id}/evidence")
+def session_evidence(session_id: int, subject_id: int, db: Session = Depends(get_db)):
+    """One student's session in full: what they said, and what was made of it.
+
+    The five kinds of information stay separate and are never merged into a
+    single "mastery" number — what the student SAID, what the NLP INFERRED,
+    what the knowledge check SHOWED, what the HMM ESTIMATED over their history,
+    and what the student REPORTED about themselves.
+    """
+    ts = db.get(TeachSession, session_id)
+    if ts is None:
+        raise HTTPException(404, "Session not found")
+    topic = _scoped_topic(db, ts.topic_id, subject_id)
+    closed = topic.evaluation_closed_at is not None
+
+    obs = (db.query(Observation).filter(Observation.session_id == ts.id).first())
+    plan = ts.plan or {}
+    status_map = {"covered": "covered", "partial": "partial",
+                  "unclear": "unclear", "pending": "not discussed"}
+    concept_summary = [
+        {"name": c["name"], "status": status_map.get(c.get("status"), "not discussed"),
+         "evidence_source": c.get("evidence_source") or "teachback"}
+        for c in plan.get("concepts", [])
+    ]
+
+    attempt = (db.query(QuizAttempt)
+               .filter(QuizAttempt.session_id == ts.id)
+               .order_by(QuizAttempt.id.desc()).first())
+    completions = (db.query(ActivityCompletion)
+                   .filter(ActivityCompletion.student_id == ts.student_id,
+                           ActivityCompletion.topic_id == ts.topic_id)
+                   .order_by(ActivityCompletion.created_at.desc()).all())
+
+    tdef = topic_def(topic)
+    recommendation = None
+    if obs is not None and obs.state_index is not None:
+        signals = None
+        report = _self_report(obs.features)
+        if report:
+            signals = {"understanding": (obs.features or [0])[0],
+                       "confidence": report["confidence"] / 10.0,
+                       "difficulty": report["difficulty"] / 10.0}
+        recommendation = recommend(obs.state_index, tdef["activities"],
+                                   obs.misconception_names or [], signals=signals,
+                                   topic_def=tdef)
+
+    responses = (db.query(Response).filter(Response.session_id == ts.id)
+                 .order_by(Response.exchange_no).all())
+
+    return {
+        "session_id": ts.id,
+        "student": {"id": ts.student_id,
+                    "name": ts.student.name if ts.student else "?",
+                    "roll_no": (ts.student.roll_no or "") if ts.student else "",
+                    "program": (ts.student.program or "") if ts.student else ""},
+        "topic": {"id": topic.id, "name": topic.name,
+                  "subject_id": topic.subject_id,
+                  "subject_name": topic.subject.name if topic.subject else None},
+        "started_at": ts.started_at.isoformat() if ts.started_at else None,
+        "completed": ts.completed,
+        "exchange_count": ts.exchange_count,
+        "evaluation_closed": closed,
+        "evaluation_closed_at": (topic.evaluation_closed_at.isoformat()
+                                 if topic.evaluation_closed_at else None),
+        # 1. WHAT THE STUDENT SAID — empty once the evaluation is closed
+        "responses_available": not closed,
+        "responses": [response_evidence(r, topic) for r in responses],
+        "takeaway": ts.summary_text or "",
+        "takeaway_removed": closed,
+        "feedback_text": ts.feedback_text or "",
+        # 2. WHAT THE NLP INFERRED (kept after closure)
+        "concept_summary": concept_summary,
+        "relationship_summary": relationship_summary(plan),
+        "misconceptions_detected": (obs.misconception_names or []) if obs else [],
+        "misconceptions_resolved": sorted(set(plan.get("resolved", []))),
+        "summary_insights": ts.summary_insights or {},
+        "evidence_notes": (obs.evidence_notes or []) if obs else [],
+        # 3. WHAT THE KNOWLEDGE CHECK SHOWED (secondary evidence)
+        "knowledge_check": ({"n_correct": attempt.n_correct,
+                             "n_questions": attempt.n_questions,
+                             "created_at": attempt.created_at.isoformat()
+                             if attempt.created_at else None}
+                            if attempt else None),
+        # 4. WHAT THE HMM ESTIMATED over this student's whole history
+        "state": ({"label": obs.state_label,
+                   "student_label": student_state_label(obs.state_index)}
+                  if obs else None),
+        # 5. WHAT THE STUDENT REPORTED about themselves
+        "self_report": _self_report(obs.features if obs else None),
+        "pace": ts.pace or "",
+        "feedback_choices": ts.feedback_choices or [],
+        "recommendation": recommendation,
+        "activity_completions": [completion_out(c) for c in completions],
     }
 
 

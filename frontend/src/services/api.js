@@ -22,10 +22,12 @@ export const api = {
   students: () => request('/students'),
   student: (id) => request(`/students/${id}`),
   progress: (id) => request(`/students/${id}/progress`),
-  topics: (subjectId, includeArchived = false) => {
+  topics: (subjectId, includeArchived = false, startableOnly = false) => {
     const params = new URLSearchParams()
     if (subjectId) params.set('subject_id', subjectId)
     if (includeArchived) params.set('include_archived', 'true')
+    // students are only offered topics a new session can actually start on
+    if (startableOnly) params.set('startable', 'true')
     const query = params.toString()
     return request(`/topics${query ? `?${query}` : ''}`)
   },
@@ -52,6 +54,14 @@ export const api = {
   topicDeletePreview: (id) => request(`/topics/${id}/delete-preview`),
   deleteTopic: (id) => request(`/topics/${id}`, { method: 'DELETE' }),
   restoreTopic: (id) => request(`/topics/${id}/restore`, { method: 'POST' }),
+  closePreview: (id) => request(`/topics/${id}/close-preview`),
+  closeEvaluation: (id) => request(`/topics/${id}/close-evaluation`, { method: 'POST' }),
+  // teacher oversight: the subject is always sent, so a topic or session id
+  // can never reach another teacher's students
+  topicEvidence: (topicId, subjectId) =>
+    request(`/teacher/topics/${topicId}/evidence?subject_id=${subjectId}`),
+  sessionEvidence: (sessionId, subjectId) =>
+    request(`/teacher/sessions/${sessionId}/evidence?subject_id=${subjectId}`),
   startSession: (student_id, topic_id) =>
     request('/sessions/start', { method: 'POST', body: JSON.stringify({ student_id, topic_id }) }),
   respond: (sessionId, text) =>

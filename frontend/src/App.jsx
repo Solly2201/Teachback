@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout.jsx'
 import Activity from './pages/Activity.jsx'
+import Evidence from './pages/Evidence.jsx'
 import Progress from './pages/Progress.jsx'
 import RoleSelect from './pages/RoleSelect.jsx'
 import StudentDashboard from './pages/StudentDashboard.jsx'
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="/" element={<TeacherDashboard />} />
             <Route path="/lectures" element={<Lectures />} />
             <Route path="/topics" element={<Topics />} />
+            <Route path="/evidence" element={<Evidence />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </>
         )}

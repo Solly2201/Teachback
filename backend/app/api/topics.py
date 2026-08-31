@@ -8,6 +8,10 @@ GET    /api/topics/{id}/delete-preview  what deleting would do, for the dialog
 DELETE /api/topics/{id}                 delete a topic no student has used, or
                                         ARCHIVE it when history exists
 POST   /api/topics/{id}/restore         bring an archived topic back
+GET    /api/topics/{id}/close-preview   what closing the evaluation would remove
+POST   /api/topics/{id}/close-evaluation
+                                        stop new TeachBacks and permanently
+                                        delete the raw student responses
 """
 from datetime import datetime
 
@@ -17,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import (Activity, Concept, ConceptRelationship, Lecture, Misconception,
-                      Quiz, Subject, Topic)
+                      Quiz, Response, Subject, TeachSession, Topic)
 from .helpers import history_summary, topic_def, topic_history
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
@@ -72,15 +76,23 @@ class TopicIn(BaseModel):
 
 @router.get("")
 def list_topics(subject_id: int | None = None, include_archived: bool = False,
-                db: Session = Depends(get_db)):
+                startable: bool = False, db: Session = Depends(get_db)):
     """Active topics. A topic whose lecture was archived is hidden here (so no
     new TeachBack can start on it) but is still fetchable by id, because old
-    sessions and progress records reference it."""
+    sessions and progress records reference it.
+
+    ``startable`` additionally drops topics whose evaluation the teacher has
+    closed. Those stay in the faculty lists — their results are still the
+    teacher's to read — but offering one to a student would be a dead end,
+    since no new session can start on it.
+    """
     q = db.query(Topic).order_by(Topic.id)
     if subject_id is not None:
         q = q.filter(Topic.subject_id == subject_id)
     if not include_archived:
         q = q.filter(Topic.archived_at.is_(None))
+    if startable:
+        q = q.filter(Topic.archived_at.is_(None), Topic.evaluation_closed_at.is_(None))
     topics = q.all()
     return [
         {
@@ -95,6 +107,9 @@ def list_topics(subject_id: int | None = None, include_archived: bool = False,
             "activity_count": len(t.activities),
             "archived": t.archived_at is not None,
             "archived_at": t.archived_at.isoformat() if t.archived_at else None,
+            "evaluation_closed": t.evaluation_closed_at is not None,
+            "evaluation_closed_at": (t.evaluation_closed_at.isoformat()
+                                     if t.evaluation_closed_at else None),
         }
         for t in topics
     ]
@@ -300,3 +315,132 @@ def restore_topic(topic_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(t)
     return topic_def(t)
+
+
+# ---------------------------------------------------------------------------
+# evaluation closure
+# ---------------------------------------------------------------------------
+# A THIRD lifecycle, deliberately distinct from deleting and from archiving:
+#
+#   delete   - the topic never happened; it and its teaching material go.
+#   archive  - the topic is retired from the active lists; everything about it,
+#              including the raw responses, stays exactly as it was.
+#   close    - the EVALUATION is finished. The topic stays in the teacher's
+#              lists and every aggregate keeps counting, but no new TeachBack
+#              may start and the raw student responses are permanently deleted.
+#
+# Closure exists for data minimisation: free-text answers are the most
+# sensitive and by far the bulkiest thing the database holds, and once the
+# teacher has read them they serve no further purpose — the structured evidence
+# drawn from them (concept status, relationship status, misconceptions
+# resolved, the HMM observation, self-reports, knowledge-check results) is what
+# Progress and the dashboard actually run on, and all of it survives.
+#
+# It has its own column rather than overloading archived_at, so the two can be
+# reasoned about independently: a topic may be archived, closed, both, neither,
+# and restoring an archived topic never resurrects an evaluation (or the
+# responses, which are gone).
+
+
+def _topic_sessions(db: Session, topic_id: int) -> list[TeachSession]:
+    return db.query(TeachSession).filter(TeachSession.topic_id == topic_id).all()
+
+
+def _raw_counts(db: Session, topic_id: int) -> dict:
+    """How much raw student text closing this evaluation would destroy."""
+    sessions = _topic_sessions(db, topic_id)
+    ids = [s.id for s in sessions]
+    responses = (db.query(Response).filter(Response.session_id.in_(ids)).count()
+                 if ids else 0)
+    return {
+        "sessions": len(sessions),
+        "responses": responses,
+        "takeaways": sum(1 for s in sessions if (s.summary_text or "").strip()),
+        "written_feedback": sum(1 for s in sessions if (s.feedback_text or "").strip()),
+    }
+
+
+@router.get("/{topic_id}/close-preview")
+def close_evaluation_preview(topic_id: int, db: Session = Depends(get_db)):
+    """What closing this evaluation would remove — for the confirmation dialog."""
+    t = db.get(Topic, topic_id)
+    if not t:
+        raise HTTPException(404, "Topic not found")
+    counts = _raw_counts(db, t.id)
+    return {
+        "topic_id": t.id,
+        "name": t.name,
+        "subject_id": t.subject_id,
+        "already_closed": t.evaluation_closed_at is not None,
+        "closed_at": t.evaluation_closed_at.isoformat() if t.evaluation_closed_at else None,
+        "raw": counts,
+        "message": (
+            f'Close evaluation for "{t.name}"? This will stop new TeachBack sessions for this '
+            "lecture. Before closing, review any student responses you want to inspect."
+        ),
+        "removed": [
+            f"{counts['responses']} individual student response"
+            f"{'' if counts['responses'] == 1 else 's'}",
+            f"{counts['takeaways']} written takeaway"
+            f"{'' if counts['takeaways'] == 1 else 's'}",
+            f"{counts['written_feedback']} written lecture comment"
+            f"{'' if counts['written_feedback'] == 1 else 's'}",
+        ],
+        "kept": [
+            "concept and relationship evidence from every session",
+            "misconceptions detected and resolved",
+            "learning states, self-reports and lecture pace",
+            "knowledge-check results and completed activities",
+            "every student's progress history",
+        ],
+    }
+
+
+@router.post("/{topic_id}/close-evaluation")
+def close_evaluation(topic_id: int, db: Session = Depends(get_db)):
+    """Close the evaluation and permanently delete the raw responses.
+
+    One transaction: either the topic is marked closed AND every raw response
+    is gone, or nothing changed. A half-closed evaluation would be the worst
+    outcome of all — a topic that still accepts sessions while some students'
+    answers have already been destroyed.
+    """
+    t = db.get(Topic, topic_id)
+    if not t:
+        raise HTTPException(404, "Topic not found")
+    if t.evaluation_closed_at is not None:
+        raise HTTPException(400, "The evaluation for this topic is already closed.")
+
+    counts = _raw_counts(db, t.id)
+    try:
+        sessions = _topic_sessions(db, t.id)
+        ids = [s.id for s in sessions]
+        if ids:
+            (db.query(Response)
+             .filter(Response.session_id.in_(ids))
+             .delete(synchronize_session=False))
+        for ts in sessions:
+            # the raw free text goes; summary_insights — the structured
+            # evidence drawn from the takeaway — stays, as do pace and the
+            # feedback chips, which are choices rather than writing
+            ts.summary_text = ""
+            ts.feedback_text = ""
+        t.evaluation_closed_at = datetime.utcnow()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise HTTPException(500, "Closing the evaluation failed; nothing was changed.")
+
+    return {
+        "topic_id": t.id,
+        "name": t.name,
+        "evaluation_closed": True,
+        "closed_at": t.evaluation_closed_at.isoformat(),
+        "removed": counts,
+        "message": (f'The evaluation for "{t.name}" is closed. '
+                    f"{counts['responses']} individual student response"
+                    f"{'' if counts['responses'] == 1 else 's'} "
+                    f"{'was' if counts['responses'] == 1 else 'were'} permanently deleted; "
+                    "every session's concept, relationship, misconception, knowledge-check "
+                    "and progress record was kept."),
+    }

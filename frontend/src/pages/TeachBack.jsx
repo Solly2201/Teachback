@@ -260,7 +260,9 @@ export default function TeachBack({ user }) {
   const bottomRef = useRef(null)
 
   useEffect(() => {
-    api.topics().then(setTopics).catch((e) => setError(e.message))
+    // startable only: a topic whose evaluation is closed (or whose lecture was
+    // archived) cannot begin a session, so offering it would be a dead end
+    api.topics(null, false, true).then(setTopics).catch((e) => setError(e.message))
   }, [])
 
   useEffect(() => {
