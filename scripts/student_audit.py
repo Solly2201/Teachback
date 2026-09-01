@@ -650,7 +650,6 @@ def run_sessions(seed: int) -> dict:
     students = client.get("/api/students").json()
     topics = client.get("/api/topics").json()
     topic = next((t for t in topics if "Strings" in t["name"]), topics[0])
-    tdef = client.get(f"/api/topics/{topic['id']}").json()
     rng = random.Random(seed)
     rows = []
 

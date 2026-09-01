@@ -8,7 +8,7 @@ from app.api.quiz import _combined_concept_view
 from app.database import SessionLocal
 from app.hmm.model import hmm_available
 from app.main import app
-from app.models import Quiz, QuizAnswer, QuizAttempt
+from app.models import Quiz, QuizAttempt
 from app.nlp.quiz_gen import (generate_quiz_candidates, generate_quiz_questions,
                               validate_question)
 from app.seed_content import PYTHON_LECTURE, TOPICS

@@ -203,9 +203,9 @@ def parse_lecture(text: str) -> dict:
             start_section(heading, level)
             continue
 
-        # setext underline: previous line was the heading (already consumed as
-        # prose — cheap approach: detect and promote is complex, so we accept
-        # markdown/plain headings as the main paths)
+        # setext underline: the heading above it was already consumed as prose.
+        # Markdown and plain-text headings are the supported paths, so the
+        # underline is simply skipped rather than promoting the line above.
         if re.fullmatch(r"=+|-{3,}", stripped) and i > 0 and lines[i - 1].strip():
             continue
 

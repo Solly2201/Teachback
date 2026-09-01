@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import ActivityCompletion, Observation, Student, TeachSession
-from .activities import completion_out
 from ..recommend.rules import recommend
 from ..states import FEATURE_NAMES, STATE_NAMES
+from .activities import completion_out
 from .helpers import latest_state, observation_out, student_out, topic_def
 
 router = APIRouter(prefix="/api/students", tags=["students"])
@@ -23,10 +23,7 @@ def _ordered_observations(db: Session, student_id: int) -> list[Observation]:
 @router.get("")
 def list_students(db: Session = Depends(get_db)):
     students = db.query(Student).order_by(Student.id).all()
-    out = []
-    for s in students:
-        out.append(student_out(s, latest_state(s.observations)))
-    return out
+    return [student_out(s, latest_state(s.observations)) for s in students]
 
 
 @router.get("/{student_id}")

@@ -1,9 +1,10 @@
 """HMM artifact integrity regression tests.
 
 The trained HMM (data/artifacts/hmm_model.joblib) and its state mapping are
-preserved artifacts: nothing in the quality/architecture pass may retrain or
-silently modify them. These tests pin the exact SHA256 hashes recorded before
-the pass began, plus the 8-dimensional observation contract.
+preserved artifacts: nothing in the application may retrain or silently modify
+them, because every recorded learning state was decoded with these exact
+bytes. The hashes below pin them, along with the 8-dimensional observation
+contract they were trained on.
 """
 import hashlib
 
@@ -13,7 +14,7 @@ from app.config import HMM_MAPPING_PATH, HMM_MODEL_PATH
 from app.hmm.model import hmm_available, load_hmm
 from app.states import FEATURE_NAMES
 
-# Recorded 2026-08-26, before the NLP/architecture quality pass.
+# Recorded 2026-08-26.
 EXPECTED_MODEL_SHA256 = "e854818f2ea315b78aabe43c0187b4c5a25d08b032a14c1027f7f2589b59c5b6"
 EXPECTED_MAPPING_SHA256 = "b9eba277fed578360f9a53229d0184d0f05ca18385cabf4023fadb3baa8045bb"
 

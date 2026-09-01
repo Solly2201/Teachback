@@ -51,24 +51,17 @@ MISCONCEPTION_MARGIN = 0.08  # must beat similarity to the correction by this
 # the student of holding that misconception. Full credit is withheld in that
 # case — "not enough evidence yet", never "you are wrong".
 MISCONCEPTION_SHADOW = 0.10
-# Both similarity scores have a floor that the answer never has to earn.
-# "Hidden states: <nothing>" already scores 0.82 against the Hidden states
-# reference texts, purely on the repeated name; the bare word "Overfitting"
-# scores 0.72 against the Overfitting ones. Those floors vary from ~0.54 to
-# ~0.82 depending on how self-descriptive the concept's name is, so an
-# absolute threshold means something different for every concept, and for the
-# self-naming ones it is cleared by saying nothing at all.
-#
-# Each score is therefore compared against its OWN floor: the same measurement
-# with the answer removed. What is left is what the answer contributed. This
-# is a correction to the measurement, not a change of threshold — the bars
-# below are untouched.
-# Swept over 0.00-0.10 on the calibration split of data/nlp/labeled_answers.json
-# (the same procedure that fixed the conversation thresholds). Evidence accuracy
-# was flat at 0.856 across the whole range while strict accuracy fell from 0.644
-# to 0.598, and no unclear/misconception answer received credit at any value.
-# A bare "must beat its own floor" is therefore what is used: the margin bought
-# nothing the floor did not already buy, and cost real answers.
+# Both similarity scores have a floor the answer never has to earn: the
+# concept name alone scores ~0.54-0.82 against its own reference texts,
+# depending on how self-descriptive that name is. An absolute bar therefore
+# means something different for every concept, and the self-naming ones clear
+# it by saying nothing at all. Each score is instead compared against its own
+# floor — the same measurement with the answer removed — so what is left is
+# what the answer contributed. A correction to the measurement, not a change
+# of threshold: the similarity bars themselves are untouched. Requiring a
+# MARGIN above the floor was swept over 0.00-0.10 on the calibration split
+# of data/nlp/labeled_answers.json and bought nothing the floor did not
+# already buy, while costing real answers.
 NAME_ONLY_LIFT = 0.0  # credit requires beating the floor, not merely reaching it
 # How many informative words an answer must carry before a prefix-inflated
 # similarity is trusted on its own. One word is a fragment, not an
@@ -635,12 +628,8 @@ def analyze_response(text: str, topic_def: dict) -> dict:
             #     "split breaks the text into pieces and join puts the pieces
             #     back together" shares "back" with the wrong version of split()
             #     while stating the right one with "breaks".
-            # Non-distinctive adverbs must not act as contradiction cues: a
-            # correct answer ("split gives you back the separate pieces in a
-            # list") should not be called wrong for sharing the word "back"
-            # with the teacher's wrong version. Applied to relationships only —
-            # misconception cues legitimately turn on small words like "one"
-            # versus "zero".
+            #     _WEAK_CUES is dropped for relationships only; misconception
+            #     cues legitimately turn on small words like "one" vs "zero".
             cues = contradiction_cues(r["description"], r.get("contradiction", "")) - _WEAK_CUES
             right_cues = (contradiction_cues(r.get("contradiction", ""), r["description"])
                            - _WEAK_CUES if r.get("contradiction") else set())

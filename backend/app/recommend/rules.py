@@ -73,10 +73,8 @@ GENERIC_ACTIVITIES = {
 
 # Per-state explanation of why that style of activity is chosen.
 STATE_WHY = {
-    # "low engagement" is a claim about the student's effort, which the system
-    # never observes — it only ever sees how much evidence a session produced.
-    # states.STATE_STUDENT_NAMES was rewritten for exactly this reason; this
-    # line is the same sentence said a second time and had been missed.
+    # Never phrased as low effort: the system observes how much evidence a
+    # session produced, never the student's motivation (see states.py).
     "not_trying": "Your recent sessions haven't given us much to go on yet, so a short warm-up is the easiest way back in.",
     "unclear": "The core ideas are not settled yet, so a simpler explanation will help more than practice right now.",
     "struggling": "You are putting in real effort but some ideas have gaps, so a guided exercise with hints fits best.",
@@ -136,7 +134,7 @@ def _template_activity(state_key: str, topic_def: dict | None, evidence: dict | 
         a_name, b_name = focus["name"], topic_name
     return {**base, "kind": "challenge", "title": f"Connect the ideas: {a_name} & {b_name}",
             "description": "An optional extension — connect two ideas from this topic.",
-            "content": f"The strongest test of understanding is connecting ideas rather than repeating them.",
+            "content": "The strongest test of understanding is connecting ideas rather than repeating them.",
             "question": f"How does {a_name} relate to {b_name}? Explain the connection in one or two sentences."}
 
 

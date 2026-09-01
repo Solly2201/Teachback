@@ -512,12 +512,10 @@ def regenerate_quiz(lecture_id: int, data: RegenerateIn, db: Session = Depends(g
 # ---------------------------------------------------------------------------
 # delete / archive
 # ---------------------------------------------------------------------------
-# Deleting a lecture must never delete what students did. A published lecture
-# owns a Topic, and TeachSession / Observation / QuizAttempt / ActivityCompletion
-# rows point at that Topic. Cascading through them would erase real learning
-# records because a teacher tidied up their lecture list.
-#
-# So the delete action has two modes, chosen from the data, not from a flag:
+# Deleting a lecture must never delete what students did: a published lecture
+# owns a Topic, and the learning records hang off that Topic
+# (helpers.topic_history). So the delete action has two modes, chosen from the
+# data, not from a flag:
 #
 #   deleted   - no student ever touched this lecture's topic: the lecture,
 #               its topic and the topic's owned rows (concepts, relationships,

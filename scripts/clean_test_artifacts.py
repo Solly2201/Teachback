@@ -36,8 +36,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
-from sqlalchemy import text  # noqa: E402
-
 from app.config import DB_PATH  # noqa: E402
 from app.database import SessionLocal, engine  # noqa: E402
 from app.models import (Activity, ActivityCompletion, Concept,  # noqa: E402

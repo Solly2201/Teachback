@@ -66,7 +66,6 @@ def post(path, payload=None, expect=200):
     return r.json()
 
 
-# --------------------------------------------------------------------------
 step("Faculty switches to the Python Programming subject")
 teachers = get("/api/teachers")
 subjects = {s["name"]: s for t in teachers for s in t["subjects"]}
@@ -76,7 +75,6 @@ print(f"    teachers: {[t['name'] for t in teachers]}")
 print(f"    selected: {py['name']} (id={py['id']})")
 check("two demo subjects available", len(subjects) >= 2)
 
-# --------------------------------------------------------------------------
 step("Faculty uploads today's slide PDF")
 from pdf_decks import cloud_deck  # noqa: E402
 
@@ -91,7 +89,6 @@ for r in report["removed_by_reason"]:
     print(f"      {r['count']:>3}x {r['label']:<32} e.g. {r['examples'][0][:52]!r}")
 print(f"    empty (boilerplate-only) pages skipped: {report['empty_pages']}")
 
-# --------------------------------------------------------------------------
 step("Faculty inspects the cleaned extraction")
 material = extract["text"]
 print("    ---- cleaned material (first 900 chars) ----")
@@ -104,7 +101,6 @@ check("running footer removed", "module 1: introduction to cloud computing" not 
 check("page provenance markers present", "<!-- page" in material)
 check("raw extraction still available", "Copyright" in extract["raw_text"])
 
-# --------------------------------------------------------------------------
 step("Faculty analyses the material (deterministic NLP, no LLM)")
 lecture = post("/api/lectures", {
     "subject_id": py["id"],
@@ -120,7 +116,6 @@ print(f"    lecture id={lecture['id']} status={lecture['status']}")
 notes = lecture["suggestions"]["structure"]["notes"]
 print(f"    draft quality notes: {notes or 'none — every suggestion is well supported'}")
 
-# --------------------------------------------------------------------------
 step("Faculty inspects the extracted concepts, provenance, meanings and facts")
 for c in concepts:
     where = f"page {c['source_page']}" if c.get("source_page") else "pasted notes"
@@ -148,7 +143,6 @@ check("document structure did not become a concept",
 check("concept count follows the evidence, not a fixed number",
       0 < len(concepts) <= 8, f"{len(concepts)} concepts")
 
-# --------------------------------------------------------------------------
 step("Faculty inspects the drafted questions")
 for c in concepts[:2]:
     print(f"    {c['name']}:")
@@ -160,7 +154,6 @@ check("main questions are conversational, not exam-style",
 check("application questions are optional extras",
       all("application_question" in c for c in concepts))
 
-# --------------------------------------------------------------------------
 step("Faculty edits one concept and publishes")
 edited = [dict(c) for c in concepts]
 edited[0]["description"] = (
@@ -184,7 +177,6 @@ check("lecture is live", published["lecture"]["status"] == "published")
 check("published concepts carry provenance",
       all(c["source"].get("section") for c in topic["concepts"]))
 
-# --------------------------------------------------------------------------
 step("Published lecture is retrievable and appears for the right subject only")
 fetched = get(f"/api/topics/{topic['id']}")
 check("topic fetches", fetched["id"] == topic["id"])
@@ -194,7 +186,6 @@ check("new topic is in the Python subject", topic["id"] in py_topics)
 check("new topic is NOT in Neural Networks", topic["id"] not in nn_topics)
 check("subjects share no topics", not (py_topics & nn_topics))
 
-# --------------------------------------------------------------------------
 step("Student starts TeachBack")
 students = get("/api/students")
 student = next(s for s in students if s["name"] == "Shreshtha Bindal")
@@ -214,7 +205,6 @@ def answer(text):
     return out
 
 
-# --------------------------------------------------------------------------
 step("Student answers casually, says 'I don't know' once, then tries the easier question")
 # realistic, casual answers — one per concept, plus one honest blank
 BY_CONCEPT = {
@@ -242,7 +232,6 @@ while turn.get("followup") and not turn["awaiting_self_report"]:
 print(f"\n    conversation finished after {turn['question_no']} questions")
 print(f"    closing: {turn.get('closing')}")
 
-# --------------------------------------------------------------------------
 step("Student gives a short takeaway summary and their self-report")
 result = post(f"/api/sessions/{sid}/finish", {
     "attention": 7, "confidence": 6, "difficulty": 4,
@@ -264,7 +253,6 @@ check("'not discussed' is a separate state from 'needs clarification'",
       {r["status"] for r in result["relationship_summary"]} <=
       {"demonstrated", "not_discussed", "needs_clarification"})
 
-# --------------------------------------------------------------------------
 step("Learning state, evidence and recommendation")
 print(f"    state (faculty wording): {result['state']['label']}")
 print(f"    state (student wording): {result['state']['student_label']}")
@@ -287,7 +275,6 @@ if not_discussed:
     check("undiscussed material is never called a mistake",
           "mistake" not in joined or "isn't a mistake" in joined or "not a mistake" in joined)
 
-# --------------------------------------------------------------------------
 step("Student completes the 10-question knowledge check")
 quiz = get(f"/api/topics/{topic['id']}/quiz")
 if quiz.get("available"):
@@ -329,7 +316,6 @@ else:
     check("knowledge check available", False, "no quiz generated")
     outcome = None
 
-# --------------------------------------------------------------------------
 step("HMM state is untouched by the knowledge check")
 progress = get(f"/api/students/{student['id']}/progress")
 latest = progress["timeline"][-1]
@@ -340,7 +326,6 @@ check("quiz recorded only as an evidence note",
       any("Knowledge check" in e for e in latest["evidence"]))
 print(f"    evidence notes: {latest['evidence']}")
 
-# --------------------------------------------------------------------------
 step("Student completes the recommended activity")
 activity = (outcome["updated_recommendation"] if outcome else result["recommendation"])["activity"]
 completion = post("/api/activities/complete", {
@@ -353,7 +338,6 @@ completion = post("/api/activities/complete", {
 print(f"    {completion['message']}")
 check("activity completion recorded", completion["completed"])
 
-# --------------------------------------------------------------------------
 step("Student progress page")
 progress = get(f"/api/students/{student['id']}/progress")
 print(f"    sessions in timeline: {len(progress['timeline'])}")
@@ -362,7 +346,6 @@ print(f"    saved takeaways: {len(progress['summaries'])}")
 check("the student's own summary is shown back to them",
       any("someone else" in s["text"] for s in progress["summaries"]))
 
-# --------------------------------------------------------------------------
 step("Teacher dashboard, feedback aggregation and subject isolation")
 py_view = get(f"/api/teacher/overview?subject_id={py['id']}")
 nn_view = get(f"/api/teacher/overview?subject_id={nn['id']}")
@@ -383,7 +366,6 @@ check("no Neural Networks session leaked into Python",
 check("no Python session leaked into Neural Networks",
       all(o["topic_id"] in nn_ids for o in nn_view["recent_interactions"]))
 
-# --------------------------------------------------------------------------
 step("Faculty deletes the lecture — student history must survive")
 preview = get(f"/api/lectures/{lecture['id']}/delete-preview")
 print(f"    mode: {preview['mode']}")
@@ -395,7 +377,6 @@ deleted = client.delete(f"/api/lectures/{lecture['id']}").json()
 print(f"    result: {deleted['message']}")
 check("archived rather than deleted", deleted["mode"] == "archived")
 
-# --------------------------------------------------------------------------
 step("Verify the deleted lecture is gone from every active surface")
 active = [x["id"] for x in get(f"/api/lectures?subject_id={py['id']}")]
 check("gone from the active lecture list", lecture["id"] not in active)
@@ -413,7 +394,6 @@ archived_list = get(f"/api/lectures?subject_id={py['id']}&include_archived=true"
 check("visible in the archived list", any(x["id"] == lecture["id"] and x["archived"]
                                           for x in archived_list))
 
-# --------------------------------------------------------------------------
 step("Verify no student record was destroyed and no reference dangles")
 from app.database import SessionLocal  # noqa: E402
 from app.models import (ActivityCompletion, Observation, Quiz, QuizAttempt,  # noqa: E402
@@ -450,7 +430,6 @@ check("the student's progress page still reads correctly",
 check("the archived topic is still fetchable for history",
       client.get(f"/api/topics/{topic['id']}").status_code == 200)
 
-# --------------------------------------------------------------------------
 step("Faculty restores the lecture, then removes it again to leave demo data clean")
 restored = post(f"/api/lectures/{lecture['id']}/restore")
 check("restore works", restored["archived"] is False)
@@ -458,7 +437,6 @@ check("restored topic is active again",
       topic["id"] in {t["id"] for t in get(f"/api/topics?subject_id={py['id']}")})
 client.delete(f"/api/lectures/{lecture['id']}")
 
-# --------------------------------------------------------------------------
 step("Health and HMM integrity")
 health = get("/api/health")
 print(f"    health: {health}")

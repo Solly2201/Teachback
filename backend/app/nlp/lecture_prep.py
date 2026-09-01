@@ -44,7 +44,7 @@ import re
 
 import numpy as np
 
-from .analyzer import _STOPWORDS, content_words, split_sentences
+from .analyzer import _STOPWORDS, content_words
 from .embedder import cosine_matrix, embed
 from .lecture_parser import (_is_code_like, is_generic_heading,
                              parse_connection_line, parse_lecture,

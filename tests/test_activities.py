@@ -15,8 +15,9 @@ from app.states import FEATURE_NAMES
 
 client = TestClient(app)
 
-# sha256 of data/artifacts/hmm_model.joblib at the time this improvement pass
-# was made — the pass must not retrain or replace the HMM artifact.
+# The HMM artifact is pinned: no change to the app may retrain or replace it.
+# Pinned again here (see tests/test_hmm_integrity.py) so a change to the
+# recommendation flow cannot quietly move the model underneath it.
 HMM_ARTIFACT_SHA256 = "e854818f2ea315b78aabe43c0187b4c5a25d08b032a14c1027f7f2589b59c5b6"
 
 

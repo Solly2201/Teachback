@@ -13,7 +13,7 @@ several subjects, so nothing can pass by being tuned to one lecture.
 """
 import pytest
 
-from app.nlp.lecture_parser import is_generic_heading, parse_lecture
+from app.nlp.lecture_parser import is_generic_heading
 from app.nlp.lecture_prep import best_meaning, prepare_lecture, rank_facts
 
 STRUCTURED_NOTES = """# Databases

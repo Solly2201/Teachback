@@ -254,7 +254,7 @@ def _self_report(features: list | None) -> dict | None:
             "difficulty": round(features[7] * 10, 1)}
 
 
-def _session_row(db: Session, ts: TeachSession, obs: Observation | None) -> dict:
+def _session_row(ts: TeachSession, obs: Observation | None) -> dict:
     plan_concepts = (ts.plan or {}).get("concepts", [])
     demonstrated = sum(1 for c in plan_concepts if c.get("status") == "covered")
     return {
@@ -298,7 +298,7 @@ def topic_evidence(topic_id: int, subject_id: int, db: Session = Depends(get_db)
         # after closure there is nothing raw left to open
         "responses_available": not closed,
         "session_count": len(sessions),
-        "sessions": [_session_row(db, ts, obs_by_session.get(ts.id)) for ts in sessions],
+        "sessions": [_session_row(ts, obs_by_session.get(ts.id)) for ts in sessions],
     }
 
 

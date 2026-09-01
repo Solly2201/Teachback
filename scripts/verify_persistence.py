@@ -94,7 +94,6 @@ def main() -> int:
     check("every application table exists", expected_tables <= tables,
           f"missing: {sorted(expected_tables - tables)}" if expected_tables - tables else "")
 
-    # --- 1. is the data actually there? -----------------------------------
     section("Persisted record counts (read through a fresh connection)")
     db = SessionLocal()
     try:
@@ -125,7 +124,6 @@ def main() -> int:
     finally:
         db.close()
 
-    # --- 2. does it survive a brand-new connection? -----------------------
     section("Round trip: write, drop every connection, read back")
     db = SessionLocal()
     try:
@@ -178,7 +176,6 @@ def main() -> int:
     finally:
         db.close()
 
-    # --- 3. referential integrity ------------------------------------------
     section("Referential integrity (no orphaned or dangling rows)")
     db = SessionLocal()
     try:

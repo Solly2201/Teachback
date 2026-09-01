@@ -1,9 +1,8 @@
 """Tests for the synthetic generator and the HMM training/inference pipeline."""
 import numpy as np
-import pytest
 
 from app.hmm.synthetic import ARCHETYPES, generate_dataset
-from app.states import STATE_NAMES, STATE_PROFILES
+from app.states import STATE_PROFILES
 
 
 def test_dataset_shape():

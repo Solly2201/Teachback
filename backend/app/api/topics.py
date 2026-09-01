@@ -196,12 +196,10 @@ def update_topic(topic_id: int, data: TopicIn, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 # delete / archive / restore
 # ---------------------------------------------------------------------------
-# A Topic is what every learning record points at: TeachSession, Observation,
-# QuizAttempt (through its Quiz) and ActivityCompletion all carry its id.
-# Deleting one outright would therefore erase real student history because a
-# teacher tidied their topic list, so the action has two modes chosen from the
-# data rather than from a flag — the same rule the lecture delete already uses,
-# reading the same counts (helpers.topic_history):
+# Deleting a topic outright would erase real student history because a teacher
+# tidied their topic list, so the action has two modes chosen from the data
+# rather than from a flag — the same rule the lecture delete uses, over the
+# same counts (helpers.topic_history):
 #
 #   deleted   - no student has ever used this topic: the topic and everything
 #               it owns (concepts, relationships, misconceptions, activities,

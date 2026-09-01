@@ -131,10 +131,8 @@ def respond(session_id: int, data: RespondIn, db: Session = Depends(get_db)):
         )
         if cdef:
             # sibling_names lets the check tell "explaining this concept"
-            # apart from "listing the lecture's other headings". The whole-
-            # response analysis has always passed them; the per-question check
-            # did not, so a bare list of the topic's own labels ("gradient
-            # descent backpropagation loss weights") counted as evidence here.
+            # apart from "listing the lecture's other headings": a bare list
+            # of the topic's own labels is naming, not explaining.
             analysis["target_check"] = targeted_concept_check(
                 data.text, cdef, topic_name=tdef.get("name", ""),
                 misconceptions=tdef.get("misconceptions"),

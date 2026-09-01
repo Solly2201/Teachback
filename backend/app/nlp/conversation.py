@@ -199,8 +199,8 @@ def _similarity_for(analysis: dict, entry: dict) -> float:
 def _lifted(tc: dict, key: str) -> bool:
     """True when the answer moved this score above the floor it starts from.
 
-    A caller that does not report the floor gets the benefit of the doubt, so
-    that older/partial target-check payloads behave exactly as before.
+    A target_check that does not report the floor gets the benefit of the
+    doubt rather than losing credit it cannot be checked for.
     """
     lift = tc.get(key)
     return lift is None or lift > NAME_ONLY_LIFT
@@ -224,22 +224,15 @@ def _verdict(analysis: dict, entry: dict, confirm_context: bool = False) -> str:
     tc = analysis.get("target_check") or {}
     plain = max(_similarity_for(analysis, entry), tc.get("plain", 0.0))
     ctx = tc.get("contextual", 0.0)
-    # Does the answer say anything about the concept beyond naming it?
-    #
-    # Both similarity scores are inflated by the concept name, because the
-    # reference texts are written as "Name: explanation". So "python uses
-    # indexing" sits at ~0.8 against Indexing while explaining nothing, and
-    # "something with brackets" clears the contextual bar on the shared prefix
-    # alone — while a correct paraphrase that avoids the jargon can share no
-    # words with the teacher's text at all. Credit therefore requires either
-    # several informative words about the concept, or one of the teacher's own
-    # key words for it (analyzer.concept_evidence). Neither can be satisfied by
-    # naming the concept: the name is excluded from both signals. This is a
-    # structural requirement, not a similarity bar — no threshold moved.
+    # Does the answer say anything about the concept beyond naming it? Both
+    # scores are inflated by the shared "Name: " prefix — "python uses
+    # indexing" sits at ~0.8 against Indexing while explaining nothing — so
+    # credit also requires informative words or one of the teacher's key words
+    # (analyzer.concept_evidence). A structural requirement, not a bar.
     terms = tc.get("informative_terms")
     if terms is None:
-        # callers predating this signal keep the previous lexical behaviour
-        # rather than being silently blocked
+        # a target_check without this signal falls back to lexical overlap,
+        # so a partial payload is never silently treated as no evidence
         corroborated = tc.get("overlap", 0) >= 1 if tc else True
     else:
         corroborated = tc.get("corroborated",
@@ -251,13 +244,10 @@ def _verdict(analysis: dict, entry: dict, confirm_context: bool = False) -> str:
     # itself is not full credit, even when the misconception detector did not
     # meet its (deliberately strict) bar for naming it
     ceiling_partial = bool(tc.get("shadowed"))
-    # Reaching the bar is not the same as earning it. Each score has a floor
-    # the answer never has to clear — the concept's own name accounts for most
-    # of it (analyzer.NAME_ONLY_LIFT) — and for a self-describing concept like
-    # "Hidden states" that floor is already above the credit bar, so silence
-    # scores as well as an explanation. Full credit therefore goes to the
-    # score that the ANSWER lifted above its floor. Scores whose floor is not
-    # reported (older callers) keep the previous behaviour.
+    # Reaching the bar is not the same as earning it: for a self-describing
+    # concept like "Hidden states" the name alone already clears the credit
+    # bar, so full credit goes to the score the ANSWER lifted above its own
+    # floor (analyzer.NAME_ONLY_LIFT).
     earned_plain = plain >= TARGET_COVERED_T and _lifted(tc, "plain_lift")
     earned_ctx = ctx >= CTX_COVERED_T and _lifted(tc, "contextual_lift")
     if (earned_plain or earned_ctx) and not ceiling_partial:

@@ -137,7 +137,6 @@ def main() -> int:
     driver = make_driver(args.headed)
     driver.set_page_load_timeout(60)
     try:
-        # ------------------------------------------------- the sign-in path
         section("Role selection (the real entry point)")
         driver.get(url)
         driver.execute_script("localStorage.clear()")
@@ -151,7 +150,6 @@ def main() -> int:
             check("choosing Teacher lands on the faculty dashboard",
                   wait_text(driver, "Class Overview") or wait_text(driver, "Overview"))
 
-        # ------------------------------------------------------ faculty list
         section("Faculty -> Lectures: is the Delete/Archive control visible?")
         # land on a subject that actually has a lecture, the way a teacher who
         # taught one would; an empty subject proves nothing about the control
@@ -205,7 +203,6 @@ def main() -> int:
         check("no horizontal overflow on the lecture list", overflow(driver) == 0,
               f"{overflow(driver)}px")
 
-        # ------------------------------------------- confirmation dialog
         section("Delete confirmation dialog")
         if visible:
             visible[0].click()
@@ -237,7 +234,6 @@ def main() -> int:
                 check("a confirmation dialog opens (not a one-click delete)", False,
                       "no [role=dialog] appeared")
 
-        # ------------------------------------------ topic management delete
         # The whole point of the action is that a teacher can remove a topic
         # from the real screen, so this drives it end to end on a probe topic
         # it creates and then removes — the database is left as it was found.
@@ -256,7 +252,7 @@ def main() -> int:
             for stale in api_get(url, f"/api/topics?subject_id={target[1]}&include_archived=true"):
                 if stale["name"] == PROBE:
                     api_delete(url, f"/api/topics/{stale['id']}")
-            probe = api_post(url, "/api/topics", {
+            api_post(url, "/api/topics", {
                 "name": PROBE, "subject_id": target[1],
                 "description": "Created by verify_ui.py and removed again.",
                 "reference_explanation": "ref", "concepts": [], "relationships": [],
@@ -372,7 +368,6 @@ def main() -> int:
                 "localStorage.setItem('teachback_teacher_ctx', arguments[0])",
                 json.dumps({"teacher_id": target[0], "subject_id": target[1]}))
 
-        # ------------------------------------------------- subject switcher
         section("Teacher / subject switcher actually refetches")
         driver.get(f"{url}/lectures")
         wait_text(driver, "Lecture TeachBacks")
@@ -395,7 +390,6 @@ def main() -> int:
                 check("the subject list follows the selected teacher", len(subjects) >= 1,
                       f"subjects: {subjects}")
 
-        # ------------------------------------------------- faculty routes
         section("Faculty routes render cleanly")
         for route in ["/", "/lectures", "/topics"]:
             driver.get(f"{url}{route}")
@@ -406,7 +400,6 @@ def main() -> int:
                   + (f" | console: {errs[0][:80]}" if errs else "")
                   + (f" | overflow {ov}px" if ov else ""))
 
-        # ------------------------------------------------- student routes
         section("Student routes render cleanly")
         with urllib.request.urlopen(f"{url}/api/students", timeout=20) as r:
             students = json.loads(r.read().decode())
@@ -422,7 +415,6 @@ def main() -> int:
                   + (f" | console: {errs[0][:80]}" if errs else "")
                   + (f" | overflow {ov}px" if ov else ""))
 
-        # ---------------------------------------- student-facing state wording
         section("Student-facing wording never accuses the student")
         driver.get(f"{url}/progress")
         time.sleep(2.2)
@@ -430,7 +422,6 @@ def main() -> int:
         check("the phrase 'Not Trying' is not shown to students",
               "not trying" not in text.lower())
 
-        # --------------------------------------------------- narrow desktop
         section("Layout at a narrow desktop width (1024px)")
         driver.set_window_size(1024, 800)
         for route in ["/", "/teachback", "/progress"]:
