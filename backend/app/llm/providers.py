@@ -28,6 +28,9 @@ class LLMProvider:
     def __init__(self, settings: ProviderSettings, timeout_seconds: float):
         self.settings = settings
         self.timeout = timeout_seconds
+        # token counts from the most recent successful call, when the
+        # provider reports them (observability only; never billed logic)
+        self.last_usage: dict | None = None
 
     def generate_structured(self, system_prompt: str, user_prompt: str) -> str:
         """Return the provider's raw text response (expected to be JSON).
@@ -75,6 +78,9 @@ class GeminiProvider(LLMProvider):
             "generationConfig": generation_config,
         }
         data = self._post(url, headers, payload)
+        usage = data.get("usageMetadata") or {}
+        self.last_usage = {"input_tokens": usage.get("promptTokenCount"),
+                           "output_tokens": usage.get("candidatesTokenCount")}
         try:
             return data["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError, TypeError):
@@ -98,6 +104,9 @@ class GroqProvider(LLMProvider):
             "temperature": 0.4,
         }
         data = self._post(url, headers, payload)
+        usage = data.get("usage") or {}
+        self.last_usage = {"input_tokens": usage.get("prompt_tokens"),
+                           "output_tokens": usage.get("completion_tokens")}
         try:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):

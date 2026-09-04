@@ -430,6 +430,71 @@ def run_adversarial(cases: list[dict], mock: bool) -> dict:
     return {"rows": rows, "aggregate": aggregate}
 
 
+CONDITION_LABELS = {
+    "A": "deterministic TeachBack (v1 wording, no LLM)",
+    "B": "LLM without targeted RAG (whole topic as context)",
+    "C": "targeted RAG + LLM (rule-chosen target, fixed difficulty)",
+    "D": "evidence-aware controller + targeted RAG + constrained LLM",
+}
+
+METRIC_DEFINITIONS = {
+    "target_match_rate": "share of cases where the pipeline's decision targets the "
+                         "benchmark's expected concept/relationship/misconception",
+    "grounded_rate": "share of generated probes whose every cited grounding id was "
+                     "actually supplied (teacher-grounding correctness)",
+    "target_terms_rate": "share of generated probes whose wording mentions the target",
+    "mean_novel_term_share": "mean share of a question's content words absent from the "
+                             "supplied teacher material — a strict hallucination PROXY, "
+                             "comparable across conditions, not a hallucination rate",
+    "fallback_rate": "share of probes realized by the fallback provider",
+    "mean_latency_ms": "mean provider round-trip",
+    "plan_agreement_rate": "condition D only: share of cases where the controller's "
+                           "top-utility candidate is the same target the v1 plan slot "
+                           "addresses. Disagreements on this benchmark come from "
+                           "alphabetical tie-breaking among equal-utility (0.55) pending "
+                           "concepts, not from evidence-driven divergence — see README §20",
+    "diagnostic_usefulness": "NOT MEASURED: requires manual labeling that has not been done",
+}
+
+
+def write_comparison() -> None:
+    """One comparable ablation artifact from whatever results actually exist.
+
+    Reads only real (non-mock) results files; conditions that were never run
+    are listed as absent rather than filled in.
+    """
+    conditions = {}
+    for cond in ("A", "B", "C", "D"):
+        path = EVAL_DIR / f"results_{cond}.json"
+        if not path.exists():
+            conditions[cond] = {"label": CONDITION_LABELS[cond], "status": "not_run"}
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        conditions[cond] = {"label": CONDITION_LABELS[cond],
+                            "run": data.get("run"),
+                            "aggregate": data.get("aggregate")}
+    adv_path = EVAL_DIR / "results_adversarial.json"
+    adversarial = (json.loads(adv_path.read_text(encoding="utf-8"))
+                   if adv_path.exists() else {"status": "not_run"})
+    out = {
+        "description": "Ablation comparison assembled from measured runs only. "
+                       "A vs B isolates what constrained generation adds; B vs C "
+                       "isolates what targeted RAG adds; C vs D isolates what the "
+                       "evidence-aware controller adds (difficulty + ranking).",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "metric_definitions": METRIC_DEFINITIONS,
+        "conditions": conditions,
+        "adversarial": {"run": adversarial.get("run"),
+                        "aggregate": adversarial.get("aggregate")}
+                       if "aggregate" in adversarial else adversarial,
+    }
+    out_path = EVAL_DIR / "comparison.json"
+    out_path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"comparison -> {out_path}")
+    for cond, entry in conditions.items():
+        print(f"  [{cond}] {entry.get('aggregate') or entry.get('status')}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--condition", default="A",
@@ -441,7 +506,14 @@ def main() -> None:
     parser.add_argument("--adversarial", action="store_true",
                         help="run the prompt-injection benchmark "
                              "(data/probe_eval/adversarial.json) instead of A-D")
+    parser.add_argument("--summarize", action="store_true",
+                        help="merge existing results_*.json into one comparable "
+                             "ablation artifact (comparison.json); no API calls")
     args = parser.parse_args()
+
+    if args.summarize:
+        write_comparison()
+        return
 
     if args.adversarial:
         adversarial = json.loads((EVAL_DIR / "adversarial.json").read_text(encoding="utf-8"))

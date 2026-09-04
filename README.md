@@ -1304,14 +1304,47 @@ live demonstration of the failover path):
 
 Novel-term share (share of question content words absent from the supplied teacher
 material — a strict hallucination *proxy*) drops about 3x when retrieval is targeted (B vs
-C/D), which is the targeting working. Condition D's `plan_agreement_rate` was 0.667: the
-utility ranking disagrees with the fixed rules on a third of cases, so the controller is
-measurably not a wrapper around them. Adversarial run: 8/8 answered responses showed 0
-attempted action/target/difficulty overrides, 0 grounding violations, 0 prompt leaks —
-injection success rate 0.0 (measured on Groq only; the Gemini rows hit quota).
+C/D), which is the targeting working. All 9 generated probes in condition D followed the
+controller-selected target (target match 1.00, grounding 1.00).
+
+`plan_agreement_rate` = 0.667 means exactly: in 6 of the 9 benchmark cases the
+controller's top-utility candidate is the same target the v1 plan slot addresses; in 3 it
+is not. Honest caveat from inspecting those 3 rows: each disagreement comes from
+alphabetical tie-breaking among *equal-utility* (0.55) pending concepts — the ranking
+prefers a different untouched concept than the plan's fixed order, not a different kind of
+evidence gap. On this benchmark the metric therefore measures ordering preference under
+ties, not evidence-driven divergence; cases would need unequal pending-concept evidence
+(e.g. near-miss mentions) for the ranking to diverge meaningfully. The instrumentation is
+in place; the divergence claim is not made.
+
+Adversarial run: 8/8 answered responses showed 0 attempted action/target/difficulty
+overrides, 0 grounding violations, 0 prompt leaks — injection success rate 0.0 (measured
+on Groq only; the Gemini rows hit quota). `scripts/evaluate_probes.py --summarize` merges
+all measured runs into the single ablation artifact `data/probe_eval/comparison.json`
+(A vs B isolates constrained generation, B vs C targeted RAG, C vs D the controller);
+diagnostic-usefulness is listed there as NOT MEASURED — it needs manual labeling that has
+not been done. Smoke-test single-call observations (not statistics): Groq ~2.2 s,
+870 input / 412 output tokens; Gemini 3–21 s across the calls made during development.
 
 These are generation-quality metrics on a small benchmark. **No claim is made about real
 student learning outcomes** — that requires a study that has not been run.
+
+### What is and is not implemented
+
+**Implemented and tested:** the deterministic evidence-gap controller (utility ranking +
+posterior-informed difficulty), targeted teacher-grounded retrieval with provenance ids,
+constrained LLM generation behind versioned prompts, hard backend output invariants
+(action/target/difficulty/grounding validated against the controller decision on every
+accepted probe; every rejection falls back to the deterministic v1 question), dual-provider
+failover with sanitized observability, adversarial injection testing (mocked suite + a
+measured real-API run), and a closed-loop integration test showing the second student
+answer redirects the next controller decision.
+
+**Not implemented / not claimed:** true mathematical information gain (the utility score
+is a fixed heuristic); any real-student learning study; any causal claim about learning
+improvement; immunity to prompt injection (measured injection success was 0.0 on the runs
+made — that is an empirical result on a small benchmark, not a proof); a hallucination
+rate of zero (novel-term share is a proxy and was nonzero in every LLM condition).
 
 ### Limitations
 

@@ -214,6 +214,37 @@ def test_generated_wording_changes_no_evidence_or_outcome(monkeypatch):
     assert with_generation == v1_only
 
 
+def test_closed_adaptive_loop_second_answer_redirects_the_controller(monkeypatch):
+    """The full loop, not just question generation: answer -> NLP evidence ->
+    plan/posterior -> controller -> RAG -> generated probe -> next answer ->
+    NLP evidence -> a DIFFERENT controller decision. The second decision
+    targets a misconception that exists only because the deterministic NLP
+    detected it in the second answer — proof the controller adapts to
+    evidence, with the LLM contributing nothing but wording."""
+    block_network(monkeypatch)
+    enable_flags(monkeypatch)
+    fake = FakeService()
+    monkeypatch.setattr(generate_mod, "LLMService", lambda *a, **k: fake)
+
+    start = start_session()
+    sid = start["session_id"]
+    r1 = client.post(f"/api/sessions/{sid}/respond", json={"text": PARTIAL_ANSWER}).json()
+    assert r1["followup"]["text"] == fake.question  # probe 1 was generated
+
+    # the student answers the generated probe with a known misconception
+    r2 = client.post(f"/api/sessions/{sid}/respond",
+                     json={"text": "Backpropagation and gradient descent are the same thing."}).json()
+    assert "Backpropagation is the same as gradient descent" in r2["analysis"]["detected_misconceptions"]
+
+    d1, d2 = fake.calls[0]["decision"], fake.calls[1]["decision"]
+    assert d1["target_type"] == "concept"
+    assert d2["target_type"] == "misconception"
+    assert d2["target_name"] == "Backpropagation is the same as gradient descent"
+    assert (d1["target_type"], d1["target_id"]) != (d2["target_type"], d2["target_id"])
+    # and the second retrieval followed the new decision, not the old one
+    assert any("misconception" in i["id"] for i in fake.calls[1]["items"])
+
+
 def test_no_provider_keys_configured_is_not_an_error(monkeypatch):
     # flags on but neither key present: the service finds no providers,
     # raises LLMUnavailable internally, and the student sees a v1 question

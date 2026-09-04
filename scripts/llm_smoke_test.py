@@ -76,7 +76,9 @@ def main() -> None:
     print("model_used    :", meta["model_used"])
     print("fallback_used :", meta["fallback_used"])
     print("prompt_version:", meta["prompt_version"])
-    print("latency_ms    :", meta["latency_ms"])
+    print("latency_ms    :", meta["latency_ms"], "(one call — an observation, not a statistic)")
+    if meta.get("tokens"):
+        print("tokens        :", meta["tokens"])
     print("grounding_ids :", probe.grounding_ids)
     print("rationale     :", probe.rationale)
     print("question      :", probe.question)

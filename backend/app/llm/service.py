@@ -87,6 +87,9 @@ class LLMService:
                     "prompt_version": PROMPT_VERSION,
                     "latency_ms": round((time.perf_counter() - started) * 1000),
                 }
+                usage = getattr(provider, "last_usage", None)
+                if usage and any(v is not None for v in usage.values()):
+                    meta["tokens"] = usage
                 if attempts:
                     # why earlier providers were skipped — error kind and HTTP
                     # status only, already sanitized, never payloads or keys

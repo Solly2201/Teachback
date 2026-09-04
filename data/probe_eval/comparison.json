@@ -1,0 +1,123 @@
+{
+  "description": "Ablation comparison assembled from measured runs only. A vs B isolates what constrained generation adds; B vs C isolates what targeted RAG adds; C vs D isolates what the evidence-aware controller adds (difficulty + ranking).",
+  "generated_at": "2026-09-04T10:40:25.864597+00:00",
+  "metric_definitions": {
+    "target_match_rate": "share of cases where the pipeline's decision targets the benchmark's expected concept/relationship/misconception",
+    "grounded_rate": "share of generated probes whose every cited grounding id was actually supplied (teacher-grounding correctness)",
+    "target_terms_rate": "share of generated probes whose wording mentions the target",
+    "mean_novel_term_share": "mean share of a question's content words absent from the supplied teacher material — a strict hallucination PROXY, comparable across conditions, not a hallucination rate",
+    "fallback_rate": "share of probes realized by the fallback provider",
+    "mean_latency_ms": "mean provider round-trip",
+    "plan_agreement_rate": "condition D only: share of cases where the controller's top-utility candidate is the same target the v1 plan slot addresses. Disagreements on this benchmark come from alphabetical tie-breaking among equal-utility (0.55) pending concepts, not from evidence-driven divergence — see README §20",
+    "diagnostic_usefulness": "NOT MEASURED: requires manual labeling that has not been done"
+  },
+  "conditions": {
+    "A": {
+      "label": "deterministic TeachBack (v1 wording, no LLM)",
+      "run": {
+        "condition": "A",
+        "mock": false,
+        "timestamp": "2026-09-04T10:19:24.055434+00:00",
+        "benchmark_version": 1,
+        "prompt_version": null
+      },
+      "aggregate": {
+        "cases": 9,
+        "generated": 9,
+        "errors": 0,
+        "target_match_rate": 1.0,
+        "grounded_rate": 1.0,
+        "target_terms_rate": 0.667,
+        "mean_novel_term_share": 0.291,
+        "fallback_rate": 0.0,
+        "mean_latency_ms": 0
+      }
+    },
+    "B": {
+      "label": "LLM without targeted RAG (whole topic as context)",
+      "run": {
+        "condition": "B",
+        "mock": false,
+        "timestamp": "2026-09-04T10:21:25.258970+00:00",
+        "benchmark_version": 1,
+        "prompt_version": "probe-v2"
+      },
+      "aggregate": {
+        "cases": 9,
+        "generated": 9,
+        "errors": 0,
+        "target_match_rate": 1.0,
+        "grounded_rate": 1.0,
+        "target_terms_rate": 0.778,
+        "mean_novel_term_share": 0.531,
+        "fallback_rate": 0.111,
+        "mean_latency_ms": 11394
+      }
+    },
+    "C": {
+      "label": "targeted RAG + LLM (rule-chosen target, fixed difficulty)",
+      "run": {
+        "condition": "C",
+        "mock": false,
+        "timestamp": "2026-09-04T10:21:43.476033+00:00",
+        "benchmark_version": 1,
+        "prompt_version": "probe-v2"
+      },
+      "aggregate": {
+        "cases": 9,
+        "generated": 7,
+        "errors": 2,
+        "target_match_rate": 1.0,
+        "grounded_rate": 1.0,
+        "target_terms_rate": 0.857,
+        "mean_novel_term_share": 0.151,
+        "fallback_rate": 1.0,
+        "mean_latency_ms": 1776
+      }
+    },
+    "D": {
+      "label": "evidence-aware controller + targeted RAG + constrained LLM",
+      "run": {
+        "condition": "D",
+        "mock": false,
+        "timestamp": "2026-09-04T10:26:08.344388+00:00",
+        "benchmark_version": 1,
+        "prompt_version": "probe-v2"
+      },
+      "aggregate": {
+        "cases": 9,
+        "generated": 9,
+        "errors": 0,
+        "target_match_rate": 1.0,
+        "grounded_rate": 1.0,
+        "target_terms_rate": 0.778,
+        "mean_novel_term_share": 0.163,
+        "fallback_rate": 1.0,
+        "mean_latency_ms": 2054,
+        "plan_agreement_rate": 0.667
+      }
+    }
+  },
+  "adversarial": {
+    "run": {
+      "benchmark": "adversarial",
+      "mock": false,
+      "timestamp": "2026-09-04T10:27:32.684738+00:00",
+      "benchmark_version": 1,
+      "prompt_version": "probe-v2"
+    },
+    "aggregate": {
+      "cases": 8,
+      "provider_responses": 8,
+      "provider_errors": 8,
+      "schema_violation_rate": 0.0,
+      "attempted_action_override_rate": 0.0,
+      "attempted_target_override_rate": 0.0,
+      "attempted_difficulty_override_rate": 0.0,
+      "grounding_violation_rate": 0.0,
+      "prompt_leak_rate": 0.0,
+      "delivered_rate": 1.0,
+      "injection_success_rate": 0.0
+    }
+  }
+}
