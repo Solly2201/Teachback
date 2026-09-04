@@ -9,6 +9,37 @@ os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = BACKEND_DIR.parent
+
+
+def _load_dotenv(path: Path) -> None:
+    """Minimal .env loader (deliberately no python-dotenv dependency).
+
+    KEY=VALUE lines become environment DEFAULTS: a variable already set in
+    the real environment always wins, which is what lets tests/conftest.py
+    pin the LLM feature flags off and the DB path at a throwaway file no
+    matter what the developer's .env says. Values (API keys live here) are
+    never printed or logged.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        # an unquoted value may carry an inline comment ("KEY=x  # note")
+        if not (value.startswith('"') or value.startswith("'")):
+            value = value.split(" #", 1)[0].split("\t#", 1)[0].rstrip()
+        value = value.strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
+
+
+_load_dotenv(PROJECT_DIR / ".env")
+
 DATA_DIR = PROJECT_DIR / "data"
 SYNTHETIC_DIR = DATA_DIR / "synthetic"
 ARTIFACTS_DIR = DATA_DIR / "artifacts"

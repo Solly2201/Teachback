@@ -18,6 +18,12 @@ backend/teachback.db
 # Environment / secrets
 .env
 .env.*
+!.env.example
+
+# Probe-evaluation dry-run output (scripts/evaluate_probes.py --mock).
+# Mock results validate the harness and must never be mistaken for, or
+# committed as, measured research results.
+data/probe_eval/results_*_mock.json
 
 # IDE / editor metadata
 .vscode/

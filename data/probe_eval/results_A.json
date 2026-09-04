@@ -1,0 +1,192 @@
+{
+  "run": {
+    "condition": "A",
+    "mock": false,
+    "timestamp": "2026-09-04T10:19:24.055434+00:00",
+    "benchmark_version": 1,
+    "prompt_version": null
+  },
+  "rows": [
+    {
+      "case_id": "bp-gradient-partial-probe",
+      "condition": "A",
+      "target_type": "concept",
+      "target_name": "Gradient",
+      "target_matches_expected": true,
+      "schema_valid": true,
+      "grounded": true,
+      "latency_ms": 0,
+      "provider_used": null,
+      "fallback_used": false,
+      "question": "Can you explain what role gradients play in backpropagation?",
+      "target_terms_present": true,
+      "novel_term_share": 0.4,
+      "novel_terms": [
+        "play",
+        "role"
+      ]
+    },
+    {
+      "case_id": "bp-gradient-easier-after-blank",
+      "condition": "A",
+      "target_type": "concept",
+      "target_name": "Gradient",
+      "target_matches_expected": true,
+      "schema_valid": true,
+      "grounded": true,
+      "latency_ms": 0,
+      "provider_used": null,
+      "fallback_used": false,
+      "question": "Does the gradient tell us how the loss changes when we nudge a weight?",
+      "target_terms_present": true,
+      "novel_term_share": 0.167,
+      "novel_terms": [
+        "nudge"
+      ]
+    },
+    {
+      "case_id": "bp-weight-update-next-main",
+      "condition": "A",
+      "target_type": "concept",
+      "target_name": "Weight update",
+      "target_matches_expected": true,
+      "schema_valid": true,
+      "grounded": true,
+      "latency_ms": 0,
+      "provider_used": null,
+      "fallback_used": false,
+      "question": "Once we have the gradients, what happens to the weights?",
+      "target_terms_present": false,
+      "novel_term_share": 0.25,
+      "novel_terms": [
+        "once"
+      ]
+    },
+    {
+      "case_id": "bp-relationship-contradicted",
+      "condition": "A",
+      "target_type": "relationship",
+      "target_name": "Gradient descent -> Weight",
+      "target_matches_expected": true,
+      "schema_valid": true,
+      "grounded": true,
+      "latency_ms": 0,
+      "provider_used": null,
+      "fallback_used": false,
+      "question": "In which direction does gradient descent move the weights?",
+      "target_terms_present": true,
+      "novel_term_share": 0.2,
+      "novel_terms": [
+        "move"
+      ]
+    },
+    {
+      "case_id": "bp-misconception-bp-equals-gd",
+      "condition": "A",
+      "target_type": "misconception",
+      "target_name": "Backpropagation is the same as gradient descent",
+      "target_matches_expected": true,
+      "schema_valid": true,
+      "grounded": true,
+      "latency_ms": 0,
+      "provider_used": null,
+      "fallback_used": false,
+      "question": "You suggested backpropagation and gradient descent are the same. What does each one actually do?",
+      "target_terms_present": true,
+      "novel_term_share": 0.143,
+      "novel_terms": [
+        "suggested"
+      ]
+    },
+    {
+      "case_id": "bp-misconception-gradients-direct",
+      "condition": "A",
+      "target_type": "misconception",
+      "target_name": "Gradients directly change the weights",
+      "target_matches_expected": true,
+      "schema_valid": true,
+      "grounded": true,
+      "latency_ms": 0,
+      "provider_used": null,
+      "fallback_used": false,
+      "question": "You said gradients change the weights by themselves. What controls how big each weight change is?",
+      "target_terms_present": true,
+      "novel_term_share": 0.444,
+      "novel_terms": [
+        "big",
+        "controls",
+        "said",
+        "themselves"
+      ]
+    },
+    {
+      "case_id": "bp-deepen-after-affirmation",
+      "condition": "A",
+      "target_type": "concept",
+      "target_name": "Loss / error",
+      "target_matches_expected": true,
+      "schema_valid": true,
+      "grounded": true,
+      "latency_ms": 0,
+      "provider_used": null,
+      "fallback_used": false,
+      "question": "Can you explain what that means in your own words?",
+      "target_terms_present": false,
+      "novel_term_share": 0.0,
+      "novel_terms": []
+    },
+    {
+      "case_id": "ofr-overfitting-partial-probe",
+      "condition": "A",
+      "target_type": "concept",
+      "target_name": "Overfitting",
+      "target_matches_expected": true,
+      "schema_valid": true,
+      "grounded": true,
+      "latency_ms": 0,
+      "provider_used": null,
+      "fallback_used": false,
+      "question": "What actually goes wrong inside a model when we say it overfits?",
+      "target_terms_present": false,
+      "novel_term_share": 0.571,
+      "novel_terms": [
+        "goes",
+        "inside",
+        "overfits",
+        "wrong"
+      ]
+    },
+    {
+      "case_id": "ofr-misconception-more-training",
+      "condition": "A",
+      "target_type": "misconception",
+      "target_name": "More training always helps",
+      "target_matches_expected": true,
+      "schema_valid": true,
+      "grounded": true,
+      "latency_ms": 0,
+      "provider_used": null,
+      "fallback_used": false,
+      "question": "You suggested more training always improves the model. What happens to validation error late in training?",
+      "target_terms_present": true,
+      "novel_term_share": 0.444,
+      "novel_terms": [
+        "error",
+        "improves",
+        "late",
+        "suggested"
+      ]
+    }
+  ],
+  "aggregate": {
+    "cases": 9,
+    "generated": 9,
+    "errors": 0,
+    "target_match_rate": 1.0,
+    "grounded_rate": 1.0,
+    "target_terms_rate": 0.667,
+    "mean_novel_term_share": 0.291,
+    "fallback_rate": 0.0,
+    "mean_latency_ms": 0
+  }
+}

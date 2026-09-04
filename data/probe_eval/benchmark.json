@@ -1,0 +1,179 @@
+{
+  "description": "Manually curated benchmark for the generative-probe research extension. Each case is a frozen mid-conversation situation built from the seeded teacher-reviewed topics (backend/app/seed_content.py): the evidence state of the conversation plan, the student's last answer, the follow-up slot v1 chose, and the target a correct probe should address. Kept deliberately separate from the NLP evidence benchmark (data/nlp/) - this file evaluates probe GENERATION, never student understanding.",
+  "version": 1,
+  "cases": [
+    {
+      "id": "bp-gradient-partial-probe",
+      "topic": "Backpropagation",
+      "student_answer": "It has something to do with how the loss changes, I think.",
+      "followup_kind": "probe",
+      "plan": {
+        "concept_statuses": {"Loss / error": "covered", "Gradient": "partial"},
+        "concept_attempts": {"Gradient": 0},
+        "current_concept": "Gradient",
+        "relationship_statuses": {},
+        "detected_misconceptions": [],
+        "resolved_misconceptions": [],
+        "asked_rel": null,
+        "asked_miscon": null
+      },
+      "posterior": [0.05, 0.35, 0.35, 0.2, 0.05],
+      "expected_target_type": "concept",
+      "expected_target_name": "Gradient"
+    },
+    {
+      "id": "bp-gradient-easier-after-blank",
+      "topic": "Backpropagation",
+      "student_answer": "I don't really remember this part.",
+      "followup_kind": "easier",
+      "plan": {
+        "concept_statuses": {"Loss / error": "covered", "Gradient": "pending"},
+        "concept_attempts": {"Gradient": 0},
+        "current_concept": "Gradient",
+        "relationship_statuses": {},
+        "detected_misconceptions": [],
+        "resolved_misconceptions": [],
+        "asked_rel": null,
+        "asked_miscon": null
+      },
+      "posterior": [0.1, 0.5, 0.3, 0.08, 0.02],
+      "expected_target_type": "concept",
+      "expected_target_name": "Gradient",
+      "expected_difficulty": "easy"
+    },
+    {
+      "id": "bp-weight-update-next-main",
+      "topic": "Backpropagation",
+      "student_answer": "The gradient tells us how the loss changes when we nudge a weight.",
+      "followup_kind": "main",
+      "plan": {
+        "concept_statuses": {"Loss / error": "covered", "Gradient": "covered", "Backward propagation of error": "covered", "Weight update": "pending"},
+        "concept_attempts": {},
+        "current_concept": "Weight update",
+        "relationship_statuses": {},
+        "detected_misconceptions": [],
+        "resolved_misconceptions": [],
+        "asked_rel": null,
+        "asked_miscon": null
+      },
+      "posterior": [0.02, 0.08, 0.15, 0.5, 0.25],
+      "expected_target_type": "concept",
+      "expected_target_name": "Weight update"
+    },
+    {
+      "id": "bp-relationship-contradicted",
+      "topic": "Backpropagation",
+      "student_answer": "Gradient descent moves the weights so the loss gets bigger, I think.",
+      "followup_kind": "relationship",
+      "plan": {
+        "concept_statuses": {"Loss / error": "covered", "Gradient": "covered", "Backward propagation of error": "partial", "Weight update": "partial", "Optimization / iteration": "covered"},
+        "concept_attempts": {},
+        "current_concept": "Weight update",
+        "relationship_statuses": {"Gradient descent -> Weight": "contradicted"},
+        "detected_misconceptions": [],
+        "resolved_misconceptions": [],
+        "asked_rel": "Gradient descent -> Weight",
+        "asked_miscon": null
+      },
+      "posterior": [0.05, 0.3, 0.4, 0.2, 0.05],
+      "expected_target_type": "relationship",
+      "expected_target_name": "Gradient descent -> Weight"
+    },
+    {
+      "id": "bp-misconception-bp-equals-gd",
+      "topic": "Backpropagation",
+      "student_answer": "Backpropagation is basically gradient descent, just another name for it.",
+      "followup_kind": "misconception",
+      "plan": {
+        "concept_statuses": {"Loss / error": "covered", "Gradient": "partial"},
+        "concept_attempts": {"Gradient": 1},
+        "current_concept": "Gradient",
+        "relationship_statuses": {},
+        "detected_misconceptions": ["Backpropagation is the same as gradient descent"],
+        "resolved_misconceptions": [],
+        "asked_rel": null,
+        "asked_miscon": "Backpropagation is the same as gradient descent"
+      },
+      "posterior": [0.05, 0.35, 0.35, 0.2, 0.05],
+      "expected_target_type": "misconception",
+      "expected_target_name": "Backpropagation is the same as gradient descent"
+    },
+    {
+      "id": "bp-misconception-gradients-direct",
+      "topic": "Backpropagation",
+      "student_answer": "The gradients just change the weights by themselves until it works.",
+      "followup_kind": "misconception",
+      "plan": {
+        "concept_statuses": {"Loss / error": "covered", "Gradient": "covered", "Weight update": "partial"},
+        "concept_attempts": {"Weight update": 0},
+        "current_concept": "Weight update",
+        "relationship_statuses": {},
+        "detected_misconceptions": ["Gradients directly change the weights"],
+        "resolved_misconceptions": [],
+        "asked_rel": null,
+        "asked_miscon": "Gradients directly change the weights"
+      },
+      "posterior": null,
+      "expected_target_type": "misconception",
+      "expected_target_name": "Gradients directly change the weights"
+    },
+    {
+      "id": "bp-deepen-after-affirmation",
+      "topic": "Backpropagation",
+      "student_answer": "Yes, exactly.",
+      "followup_kind": "deepen",
+      "plan": {
+        "concept_statuses": {"Loss / error": "pending"},
+        "concept_attempts": {"Loss / error": 1},
+        "current_concept": "Loss / error",
+        "relationship_statuses": {},
+        "detected_misconceptions": [],
+        "resolved_misconceptions": [],
+        "asked_rel": null,
+        "asked_miscon": null
+      },
+      "posterior": [0.1, 0.4, 0.3, 0.15, 0.05],
+      "expected_target_type": "concept",
+      "expected_target_name": "Loss / error",
+      "expected_difficulty": "easy"
+    },
+    {
+      "id": "ofr-overfitting-partial-probe",
+      "topic": "Overfitting and Regularization",
+      "student_answer": "It's when the model does really well on the training data.",
+      "followup_kind": "probe",
+      "plan": {
+        "concept_statuses": {"Overfitting": "partial"},
+        "concept_attempts": {"Overfitting": 0},
+        "current_concept": "Overfitting",
+        "relationship_statuses": {},
+        "detected_misconceptions": [],
+        "resolved_misconceptions": [],
+        "asked_rel": null,
+        "asked_miscon": null
+      },
+      "posterior": [0.05, 0.25, 0.3, 0.3, 0.1],
+      "expected_target_type": "concept",
+      "expected_target_name": "Overfitting"
+    },
+    {
+      "id": "ofr-misconception-more-training",
+      "topic": "Overfitting and Regularization",
+      "student_answer": "If we just keep training longer, the model always gets better.",
+      "followup_kind": "misconception",
+      "plan": {
+        "concept_statuses": {"Overfitting": "partial", "Validation-based control": "pending"},
+        "concept_attempts": {"Overfitting": 0},
+        "current_concept": "Overfitting",
+        "relationship_statuses": {},
+        "detected_misconceptions": ["More training always helps"],
+        "resolved_misconceptions": [],
+        "asked_rel": null,
+        "asked_miscon": "More training always helps"
+      },
+      "posterior": [0.05, 0.3, 0.35, 0.25, 0.05],
+      "expected_target_type": "misconception",
+      "expected_target_name": "More training always helps"
+    }
+  ]
+}

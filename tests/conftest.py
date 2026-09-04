@@ -41,6 +41,16 @@ TEMPLATE_DB_PATH = _TMP_DIR / "template.db"
 # and app.config reads this once, when it is first imported.
 os.environ["TEACHBACK_DB_PATH"] = str(TEST_DB_PATH)
 
+# The experimental LLM layer must be OFF for the whole suite regardless of
+# what the developer's .env says (app.config loads .env with setdefault
+# semantics, so real environment variables — these — always win). Tests that
+# exercise the feature enable it explicitly with monkeypatch and injected
+# fake providers; no automated test may ever call a real LLM API.
+os.environ["TEACHBACK_LLM_ENABLED"] = "false"
+os.environ["TEACHBACK_GENERATIVE_PROBES"] = "false"
+os.environ["GEMINI_API_KEY"] = ""
+os.environ["GROQ_API_KEY"] = ""
+
 
 def _fingerprint(path: Path) -> tuple | None:
     """Enough of a file's identity to prove it was not written to."""

@@ -1,0 +1,267 @@
+{
+  "run": {
+    "condition": "D",
+    "mock": false,
+    "timestamp": "2026-09-04T10:26:08.344388+00:00",
+    "benchmark_version": 1,
+    "prompt_version": "probe-v2"
+  },
+  "rows": [
+    {
+      "case_id": "bp-gradient-partial-probe",
+      "condition": "D",
+      "target_type": "concept",
+      "target_name": "Gradient",
+      "target_matches_expected": true,
+      "difficulty": "easy",
+      "plan_agrees_with_ranking": true,
+      "context_items": 5,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:102",
+        "concept_question:102:easier"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1812,
+      "question": "In your own words, what does the gradient tell us about how the loss changes when we tweak a weight?",
+      "target_terms_present": true,
+      "novel_term_share": 0.143,
+      "novel_terms": [
+        "tweak"
+      ]
+    },
+    {
+      "case_id": "bp-gradient-easier-after-blank",
+      "condition": "D",
+      "target_type": "concept",
+      "target_name": "Gradient",
+      "target_matches_expected": true,
+      "difficulty": "easy",
+      "plan_agrees_with_ranking": false,
+      "difficulty_matches_expected": true,
+      "context_items": 5,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:102",
+        "concept_question:102:easier"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1704,
+      "question": "Can you describe in your own words how a gradient relates to changes in the loss when a weight is nudged?",
+      "target_terms_present": true,
+      "novel_term_share": 0.25,
+      "novel_terms": [
+        "nudged",
+        "relates"
+      ]
+    },
+    {
+      "case_id": "bp-weight-update-next-main",
+      "condition": "D",
+      "target_type": "concept",
+      "target_name": "Weight update",
+      "target_matches_expected": true,
+      "difficulty": "standard",
+      "plan_agrees_with_ranking": false,
+      "context_items": 5,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:104"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1899,
+      "question": "In your own words, why do we adjust the weights opposite the gradient, and how does the learning rate affect the size of that step?",
+      "target_terms_present": false,
+      "novel_term_share": 0.364,
+      "novel_terms": [
+        "adjust",
+        "affect",
+        "size",
+        "why"
+      ]
+    },
+    {
+      "case_id": "bp-relationship-contradicted",
+      "condition": "D",
+      "target_type": "relationship",
+      "target_name": "Gradient descent → Weight",
+      "target_matches_expected": true,
+      "difficulty": "easy",
+      "plan_agrees_with_ranking": true,
+      "context_items": 3,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "relationship:204",
+        "relationship_question:204"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 2493,
+      "question": "Can you describe in your own words how gradient descent changes the weights?",
+      "target_terms_present": true,
+      "novel_term_share": 0.167,
+      "novel_terms": [
+        "changes"
+      ]
+    },
+    {
+      "case_id": "bp-misconception-bp-equals-gd",
+      "condition": "D",
+      "target_type": "misconception",
+      "target_name": "Backpropagation is the same as gradient descent",
+      "target_matches_expected": true,
+      "difficulty": "easy",
+      "plan_agrees_with_ranking": true,
+      "context_items": 4,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "misconception_question:301",
+        "misconception_clarification:301"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 2129,
+      "question": "You suggested backpropagation and gradient descent are the same. What does each one actually do?",
+      "target_terms_present": true,
+      "novel_term_share": 0.0,
+      "novel_terms": []
+    },
+    {
+      "case_id": "bp-misconception-gradients-direct",
+      "condition": "D",
+      "target_type": "misconception",
+      "target_name": "Gradients directly change the weights",
+      "target_matches_expected": true,
+      "difficulty": "standard",
+      "plan_agrees_with_ranking": true,
+      "context_items": 4,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "misconception_question:302",
+        "misconception_clarification:302",
+        "concept:104"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1963,
+      "question": "You said gradients change the weights by themselves—can you explain what determines how large each weight update is?",
+      "target_terms_present": true,
+      "novel_term_share": 0.182,
+      "novel_terms": [
+        "determines",
+        "large"
+      ]
+    },
+    {
+      "case_id": "bp-deepen-after-affirmation",
+      "condition": "D",
+      "target_type": "concept",
+      "target_name": "Loss / error",
+      "target_matches_expected": true,
+      "difficulty": "easy",
+      "plan_agrees_with_ranking": false,
+      "difficulty_matches_expected": true,
+      "context_items": 5,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:101"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1550,
+      "question": "In your own words, what does the loss (error) function measure?",
+      "target_terms_present": true,
+      "novel_term_share": 0.0,
+      "novel_terms": []
+    },
+    {
+      "case_id": "ofr-overfitting-partial-probe",
+      "condition": "D",
+      "target_type": "concept",
+      "target_name": "Overfitting",
+      "target_matches_expected": true,
+      "difficulty": "easy",
+      "plan_agrees_with_ranking": true,
+      "context_items": 5,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept_question:101:main"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 3007,
+      "question": "In your own words, what does it mean when a model overfits?",
+      "target_terms_present": false,
+      "novel_term_share": 0.0,
+      "novel_terms": []
+    },
+    {
+      "case_id": "ofr-misconception-more-training",
+      "condition": "D",
+      "target_type": "misconception",
+      "target_name": "More training always helps",
+      "target_matches_expected": true,
+      "difficulty": "easy",
+      "plan_agrees_with_ranking": true,
+      "context_items": 4,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "misconception_question:301"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1927,
+      "question": "You said training longer always helps—what tends to happen to the validation error toward the end of training?",
+      "target_terms_present": true,
+      "novel_term_share": 0.364,
+      "novel_terms": [
+        "end",
+        "said",
+        "tends",
+        "toward"
+      ]
+    }
+  ],
+  "aggregate": {
+    "cases": 9,
+    "generated": 9,
+    "errors": 0,
+    "target_match_rate": 1.0,
+    "grounded_rate": 1.0,
+    "target_terms_rate": 0.778,
+    "mean_novel_term_share": 0.163,
+    "fallback_rate": 1.0,
+    "mean_latency_ms": 2054,
+    "plan_agreement_rate": 0.667
+  }
+}

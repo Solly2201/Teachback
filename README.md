@@ -1137,3 +1137,191 @@ happening in a student's mind.
 - Replace self-reports with behavioural signals (response latency, edit patterns).
 - Per-topic HMMs, or an input-output HMM conditioning transitions on the activity done.
 - Pilot with real students and re-estimate the emission profiles from real data.
+
+## 20. EXPERIMENTAL: uncertainty-aware generative probes (research extension)
+
+> **Status: experimental research functionality, OFF by default.** With the feature flags
+> off (the default), the application makes **zero** LLM calls and v1 behaves exactly as
+> documented above. Nothing in this section changes the NLP evidence rules, the HMM
+> artifacts, or any v1 workflow.
+
+### Research hypothesis
+
+*Can uncertainty-aware selection of teacher-grounded diagnostic probes, with an LLM used
+only for constrained natural-language realization, improve the efficiency and quality of
+conceptual understanding diagnosis compared with fixed/rule-based probing?*
+
+The novelty claimed is **not** "it uses an LLM/RAG" — it is the separation of authority
+that makes the comparison experiment possible.
+
+### Why the LLM is not the evaluator
+
+The v1 principle stands: no LLM ever judges a student. The deterministic NLP analyzer
+remains the only source of concept/relationship/misconception evidence, and the preserved
+HMM remains the only estimator of learner state. The LLM is a **language realizer**: it
+receives an already-made pedagogical decision plus teacher-approved material, and returns
+the wording of one question. An LLM outage, quota exhaustion or bad output can only ever
+mean "the student sees the v1 question instead" — never a lost session, never changed
+evidence.
+
+```
+student answer --> NLP evidence (v1, unchanged) --> conversation plan (v1, unchanged)
+                                                         | follow-up slot
+                                                         v
+                             pedagogical controller  (backend/app/probe/controller.py)
+                             deterministic: evidence-gap utility ranking over every
+                             candidate target + HMM-posterior-informed difficulty
+                                                         | decision (action, target, difficulty)
+                                                         v
+                             targeted retrieval      (backend/app/probe/retrieval.py)
+                             ONLY the target's teacher-approved material, with
+                             provenance ids (concept:12, misconception:3, ...)
+                                                         | grounded context
+                                                         v
+                             constrained LLM         (backend/app/llm/)
+                             Gemini --quota/timeout/5xx--> Groq --failure--> v1 question
+                                                         | one validated question
+                                                         v
+student answers it --> the SAME v1 NLP evidence pipeline (questions are never evidence)
+```
+
+### The controller (deterministic, inspectable)
+
+`app/probe/controller.py` ranks every candidate target by a documented **evidence-gap
+utility** (an interpretable heuristic — not a formal information-gain computation, and not
+claimed as one): an open detected misconception (1.0) > a contradicted relationship (0.95)
+> a partially-evidenced concept (0.9) > untouched material > anything already demonstrated
+(0.1). The student's HMM posterior (read-only, from their history) sets the difficulty:
+50%+ posterior mass on the three low-evidence states steps the probe down to "easy".
+Conservative first version: the v1 conversation plan still decides *when* a follow-up
+happens and which slot it fills; the controller contributes the difficulty, the full
+utility ranking, and a recorded `plan_agrees_with_ranking` flag — which makes "does
+uncertainty-aware targeting choose differently from the fixed rules?" directly measurable
+from stored metadata (it disagrees on about a third of benchmark cases).
+
+### Targeted teacher-grounded retrieval
+
+No "stuff the lecture into the prompt". `app/probe/retrieval.py` looks up only the decided
+target's teacher-reviewed material — description, facts, examples, authored questions, the
+known wrong claim for misconceptions/contradictions, and the endpoint/current concept
+explanations that anchor it. When a concept has more facts than the context budget, the
+existing MiniLM embedder ranks them against the student's last answer (no new vector
+store). Every item carries a provenance id, the LLM must cite which ids it used, and a
+cited id that was never supplied is a hard rejection.
+
+### Dual-provider failover (Gemini -> Groq)
+
+`app/llm/` implements `LLMProvider` (Gemini + Groq over plain httpx), and `LLMService` —
+the single entry point. Policy (`app/llm/errors.py`): quota/429/5xx/timeout -> try the next
+provider immediately (never a same-provider retry, so no retry storms); bad key/model
+(401/403/404) -> the other provider may still work; malformed request we built (400) -> no
+failover; malformed output -> one same-provider retry (`TEACHBACK_LLM_MAX_RETRIES`), then
+the next provider. Both fail -> deterministic v1. Every generated probe records
+`provider_used`, `model_used`, `fallback_used`, `prompt_version` (prompts are versioned:
+currently `probe-v2`) and sanitized `failed_attempts`.
+
+### Prompt-injection defense (enforced, not requested)
+
+Student text is **always untrusted data**. The defenses are structural and backend-enforced:
+
+- Student text is never interpolated into the system prompt. It travels only as a
+  JSON-escaped field explicitly marked `untrusted_data`, beside the teacher material.
+- Retrieved teacher material is data too — items in a list, never instruction text.
+- After generation, `app/llm/schema.py` re-validates the untrusted output **against the
+  controller's decision, field by field**: unknown/extra fields (e.g. `state=...`) are
+  forbidden; action must be in the server-defined vocabulary AND equal the controller's;
+  target type/id and difficulty must match exactly; grounding ids must be a non-empty
+  subset of what was supplied; exactly one question; distinctive system-prompt phrases in
+  the output are rejected as leaks. Authority flows controller -> LLM, never back.
+- A rejected output becomes a sanitized reason code and a v1 question — nothing else. The
+  original student answer still goes to the NLP evidence pipeline unmodified (injection
+  defense never edits what the evidence engine sees).
+- `tests/test_prompt_injection.py` pins all of this with mocked providers, including the
+  invariant: every accepted probe matches the controller decision; every rejection ends in
+  deterministic fallback. The real-API adversarial run (below) measured an injection
+  success rate of 0.0.
+
+### Configuration
+
+Copy `.env.example` to `.env` (gitignored — keys never live in code or git):
+
+```
+TEACHBACK_LLM_ENABLED=false        # master switch for any LLM call
+TEACHBACK_GENERATIVE_PROBES=false  # the generated-probe conversation path
+TEACHBACK_LLM_PRIMARY=gemini       #   both must be true to change anything
+TEACHBACK_LLM_FALLBACK=groq
+GEMINI_API_KEY=  GEMINI_MODEL=gemini-3.6-flash  GEMINI_THINKING_LEVEL=low
+GROQ_API_KEY=    GROQ_MODEL=openai/gpt-oss-120b
+TEACHBACK_LLM_MAX_RETRIES=1  TEACHBACK_LLM_TIMEOUT_SECONDS=30
+```
+
+Model names are env-only on purpose: during development `gemini-2.5-flash` turned out to
+be retired for new API users (HTTP 404 with a migration notice) — the fix was a config
+edit, not a code change. Keys are read server-side only, never logged, and every provider
+error message passes through a sanitizer before it can be stored or raised.
+
+### What students and teachers see
+
+Students: nothing new — a normal conversational TeachBack question. Teachers: the Student
+Evidence view gains a `generated_probe` block on exchanges whose follow-up was generated —
+target and plain-language reason, grounding provenance ids, provider/model/prompt-version,
+fallback flag. No embeddings, no scores, no prompts, no chain-of-thought, and no copy of
+the student's words beyond the response row v1 already stores. Generated-probe metadata
+lives inside the response's stored analysis, so **evaluation closure deletes it with the
+raw responses** — no second hidden copy survives.
+
+### Testing
+
+```bash
+python -m pytest tests/test_llm_service.py tests/test_probe_controller.py \
+                 tests/test_probe_retrieval.py tests/test_generative_probes_api.py \
+                 tests/test_prompt_injection.py -q     # all providers mocked, no network
+```
+
+`tests/conftest.py` pins the flags off and blanks both keys for the whole suite, so no
+automated test can ever call a real API. Manual real-API check:
+`python scripts/llm_smoke_test.py [--provider gemini|groq]`.
+
+### Evaluation harness (measured results only)
+
+`data/probe_eval/benchmark.json` holds 9 curated mid-conversation cases built from the
+seeded teacher-reviewed topics; `scripts/evaluate_probes.py` compares four conditions —
+**A** deterministic v1 wording, **B** LLM with the whole topic stuffed in (no targeting),
+**C** targeted RAG + LLM, **D** the proposed controller + targeted RAG + LLM — plus
+`--adversarial` for the injection benchmark (`adversarial.json`). `--mock` dry-runs the
+harness against a scripted fake (output marked `mock`, gitignored, never reportable).
+
+Measured on 2026-09-04 (free-tier keys; Gemini's per-minute quota was exhausted during
+the C/D/adversarial runs, so those probes were realized by the Groq fallback — itself a
+live demonstration of the failover path):
+
+| condition | generated | grounded | target terms | novel-term share | mean latency |
+|---|---|---|---|---|---|
+| A deterministic | 9/9 | n/a | 0.67 | 0.29 | 0 ms |
+| B LLM, no targeting | 9/9 | 1.00 | 0.78 | **0.53** | 11.4 s |
+| C RAG + LLM | 7/9 (two quota failures in the burst run) | 1.00 | 0.86 | 0.15 | 1.8 s |
+| D controller + RAG + LLM (paced rerun) | 9/9 | 1.00 | 0.78 | 0.16 | 2.1 s |
+
+Novel-term share (share of question content words absent from the supplied teacher
+material — a strict hallucination *proxy*) drops about 3x when retrieval is targeted (B vs
+C/D), which is the targeting working. Condition D's `plan_agreement_rate` was 0.667: the
+utility ranking disagrees with the fixed rules on a third of cases, so the controller is
+measurably not a wrapper around them. Adversarial run: 8/8 answered responses showed 0
+attempted action/target/difficulty overrides, 0 grounding violations, 0 prompt leaks —
+injection success rate 0.0 (measured on Groq only; the Gemini rows hit quota).
+
+These are generation-quality metrics on a small benchmark. **No claim is made about real
+student learning outcomes** — that requires a study that has not been run.
+
+### Limitations
+
+- The controller ranks targets and sets difficulty, but the v1 plan still owns the flow;
+  full controller authority over probe ordering is future work (and the recorded
+  ranking/agreement metadata is the instrumentation for deciding whether it is worth it).
+- The utility score is a fixed, documented heuristic, not a computed information gain.
+- Free-tier quotas are easily exhausted (observed live); the system degrades to v1 by
+  design, but a real study needs paid quotas or pacing.
+- Gemini thinking-model latency is highly variable (3-21 s measured at
+  `thinkingLevel: low`); Groq answered in about 2 s consistently.
+- The benchmark is small (9 + 8 cases) and hand-curated by one author; the adversarial
+  run covered one provider at measurement time.

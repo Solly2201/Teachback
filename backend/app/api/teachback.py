@@ -18,8 +18,10 @@ from ..hmm.model import hmm_available, infer_sequence
 from ..models import Observation, Quiz, Response, Student, TeachSession, Topic
 from ..nlp.analyzer import (analyze_response, is_term_list,
                             merge_session_analyses, targeted_concept_check)
+from ..llm.settings import generative_probes_enabled
 from ..nlp.conversation import (MAX_QUESTIONS, _update_relationships, build_plan,
                                 first_question, play_turn, timeline_out)
+from ..probe.generate import maybe_generate_probe
 from ..recommend.rules import recommend
 from ..states import FEATURE_NAMES, STATE_NAMES
 from .helpers import (DEMONSTRATED, NEEDS_CLARIFICATION, NOT_DISCUSSED,
@@ -52,6 +54,27 @@ class FinishIn(BaseModel):
     pace: str = Field(default="", max_length=20)
     feedback_choices: list[str] = Field(default_factory=list)
     feedback_text: str = Field(default="", max_length=2000)
+
+
+def _prior_posterior(db: Session, student_id: int) -> list[float] | None:
+    """The student's HMM state posterior from their history so far, for the
+    experimental probe controller's difficulty choice. Read-only: mid-session
+    generation never writes an observation or changes any HMM behavior, and
+    a student with no history (or no trained model) simply yields None."""
+    try:
+        if not hmm_available():
+            return None
+        history = (
+            db.query(Observation)
+            .filter(Observation.student_id == student_id)
+            .order_by(Observation.created_at, Observation.id)
+            .all()
+        )
+        if not history:
+            return None
+        return infer_sequence([o.features for o in history])["current_posterior"]
+    except Exception:
+        return None
 
 
 def _progress_out(plan: dict) -> dict:
@@ -142,6 +165,22 @@ def respond(session_id: int, data: RespondIn, db: Session = Depends(get_db)):
     prompt = (prev or {}).get("text") or (first_question(plan, tdef)["text"])
 
     plan, turn = play_turn(plan, analysis, tdef)
+
+    # EXPERIMENTAL (off by default): swap the deterministic follow-up's
+    # wording for an LLM-generated, teacher-grounded probe. Only the TEXT of
+    # the question changes — the plan, the evidence pipeline and the HMM are
+    # untouched, and any failure keeps the v1 question. The generated text
+    # is a question, not an answer, so exactly like v1 questions it is never
+    # analyzed as student evidence (only data.text ever reaches the analyzer).
+    if turn.get("followup") and generative_probes_enabled():
+        generated = maybe_generate_probe(
+            plan=plan, topic_def=tdef, followup=turn["followup"],
+            student_answer=data.text,
+            posterior=_prior_posterior(db, session.student_id))
+        if generated:
+            turn["followup"] = {**turn["followup"], "text": generated["question"],
+                                "generated": generated["meta"]}
+
     session.plan = plan
     session.exchange_count += 1
 

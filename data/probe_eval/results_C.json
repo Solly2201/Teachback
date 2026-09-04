@@ -1,0 +1,216 @@
+{
+  "run": {
+    "condition": "C",
+    "mock": false,
+    "timestamp": "2026-09-04T10:21:43.476033+00:00",
+    "benchmark_version": 1,
+    "prompt_version": "probe-v2"
+  },
+  "rows": [
+    {
+      "case_id": "bp-gradient-partial-probe",
+      "condition": "C",
+      "target_type": "concept",
+      "target_name": "Gradient",
+      "target_matches_expected": true,
+      "context_items": 5,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept_question:102:application"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1473,
+      "question": "What would a very large gradient for one particular weight suggest?",
+      "target_terms_present": true,
+      "novel_term_share": 0.0,
+      "novel_terms": []
+    },
+    {
+      "case_id": "bp-gradient-easier-after-blank",
+      "condition": "C",
+      "target_type": "concept",
+      "target_name": "Gradient",
+      "target_matches_expected": true,
+      "context_items": 5,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:102"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1765,
+      "question": "How does the gradient tell us what would happen to the loss if we nudge a weight just a little?",
+      "target_terms_present": true,
+      "novel_term_share": 0.0,
+      "novel_terms": []
+    },
+    {
+      "case_id": "bp-weight-update-next-main",
+      "condition": "C",
+      "target_type": "concept",
+      "target_name": "Weight update",
+      "target_matches_expected": true,
+      "context_items": 5,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:104"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1760,
+      "question": "Why do we adjust the weights in the opposite direction of the gradient, and how does the learning rate affect the size of each step?",
+      "target_terms_present": false,
+      "novel_term_share": 0.417,
+      "novel_terms": [
+        "adjust",
+        "affect",
+        "each",
+        "size",
+        "why"
+      ]
+    },
+    {
+      "case_id": "bp-relationship-contradicted",
+      "condition": "C",
+      "target_type": "relationship",
+      "target_name": "Gradient descent -> Weight",
+      "target_matches_expected": true,
+      "context_items": 3,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "relationship:204",
+        "relationship_contradiction:204"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1702,
+      "question": "Could you describe why gradient descent updates the weights toward reducing the loss instead of increasing it?",
+      "target_terms_present": true,
+      "novel_term_share": 0.455,
+      "novel_terms": [
+        "increasing",
+        "instead",
+        "reducing",
+        "toward",
+        "why"
+      ]
+    },
+    {
+      "case_id": "bp-misconception-bp-equals-gd",
+      "condition": "C",
+      "target_type": "misconception",
+      "target_name": "Backpropagation is the same as gradient descent",
+      "target_matches_expected": true,
+      "context_items": 4,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "misconception_question:301"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1715,
+      "question": "You suggested backpropagation and gradient descent are the same. What does each one actually do?",
+      "target_terms_present": true,
+      "novel_term_share": 0.0,
+      "novel_terms": []
+    },
+    {
+      "case_id": "bp-misconception-gradients-direct",
+      "condition": "C",
+      "target_type": "misconception",
+      "target_name": "Gradients directly change the weights",
+      "target_matches_expected": true,
+      "context_items": 4,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "misconception_question:302"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 2002,
+      "question": "You said gradients change the weights by themselves. What controls how big each weight change is?",
+      "target_terms_present": true,
+      "novel_term_share": 0.0,
+      "novel_terms": []
+    },
+    {
+      "case_id": "bp-deepen-after-affirmation",
+      "condition": "C",
+      "target_type": "concept",
+      "target_name": "Loss / error",
+      "target_matches_expected": true,
+      "context_items": 5,
+      "schema_valid": false,
+      "error": "LLMUnavailable",
+      "latency_ms": 987
+    },
+    {
+      "case_id": "ofr-overfitting-partial-probe",
+      "condition": "C",
+      "target_type": "concept",
+      "target_name": "Overfitting",
+      "target_matches_expected": true,
+      "context_items": 5,
+      "schema_valid": false,
+      "error": "LLMUnavailable",
+      "latency_ms": 868
+    },
+    {
+      "case_id": "ofr-misconception-more-training",
+      "condition": "C",
+      "target_type": "misconception",
+      "target_name": "More training always helps",
+      "target_matches_expected": true,
+      "context_items": 4,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "misconception_question:301",
+        "misconception_clarification:301",
+        "concept:101"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 2017,
+      "question": "You suggested more training always improves the model. How does the validation error behave later in training, and what does that tell us about overfitting?",
+      "target_terms_present": true,
+      "novel_term_share": 0.182,
+      "novel_terms": [
+        "behave",
+        "later"
+      ]
+    }
+  ],
+  "aggregate": {
+    "cases": 9,
+    "generated": 7,
+    "errors": 2,
+    "target_match_rate": 1.0,
+    "grounded_rate": 1.0,
+    "target_terms_rate": 0.857,
+    "mean_novel_term_share": 0.151,
+    "fallback_rate": 1.0,
+    "mean_latency_ms": 1776
+  }
+}

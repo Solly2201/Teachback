@@ -248,6 +248,12 @@ def response_evidence(response, topic: Topic | None = None) -> dict:
         # was said back to them
         "shown_to_student": turn.get("feedback") or "",
         "followup_asked": ((turn.get("followup") or {}) or {}).get("text") or None,
+        # Present only when the follow-up's wording came from the experimental
+        # generated-probe path: which target it addressed and why, which
+        # teacher material grounded it, and which provider/model phrased it.
+        # Plain-language audit fields only — no scores, no prompts, no
+        # student text beyond what the response row already holds.
+        "generated_probe": ((turn.get("followup") or {}) or {}).get("generated") or None,
     }
 
 

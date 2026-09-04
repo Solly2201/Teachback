@@ -1,0 +1,306 @@
+{
+  "run": {
+    "condition": "B",
+    "mock": false,
+    "timestamp": "2026-09-04T10:21:25.258970+00:00",
+    "benchmark_version": 1,
+    "prompt_version": "probe-v2"
+  },
+  "rows": [
+    {
+      "case_id": "bp-gradient-partial-probe",
+      "condition": "B",
+      "target_type": "concept",
+      "target_name": "Gradient",
+      "target_matches_expected": true,
+      "context_items": 15,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:102",
+        "relationship:202"
+      ],
+      "provider_used": "gemini",
+      "model_used": "gemini-3.6-flash",
+      "fallback_used": false,
+      "prompt_version": "probe-v2",
+      "latency_ms": 4238,
+      "question": "You mentioned it relates to how the loss changes—if a gradient value tells us how a tiny shift in a specific weight impacts the loss, what does that actually look like in practice when a weight is adjusted?",
+      "target_terms_present": true,
+      "novel_term_share": 0.588,
+      "novel_terms": [
+        "impacts",
+        "like",
+        "look",
+        "mentioned",
+        "practice",
+        "relates",
+        "shift",
+        "specific",
+        "tells",
+        "tiny"
+      ]
+    },
+    {
+      "case_id": "bp-gradient-easier-after-blank",
+      "condition": "B",
+      "target_type": "concept",
+      "target_name": "Gradient",
+      "target_matches_expected": true,
+      "context_items": 15,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:102",
+        "relationship:202"
+      ],
+      "provider_used": "gemini",
+      "model_used": "gemini-3.6-flash",
+      "fallback_used": false,
+      "prompt_version": "probe-v2",
+      "latency_ms": 3862,
+      "question": "If you tweak a specific weight in a network just a tiny bit, how does the concept of a gradient help us understand what happens to the loss?",
+      "target_terms_present": true,
+      "novel_term_share": 0.417,
+      "novel_terms": [
+        "concept",
+        "help",
+        "specific",
+        "tiny",
+        "tweak"
+      ]
+    },
+    {
+      "case_id": "bp-weight-update-next-main",
+      "condition": "B",
+      "target_type": "concept",
+      "target_name": "Weight update",
+      "target_matches_expected": true,
+      "context_items": 15,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:104",
+        "relationship:203",
+        "relationship:204",
+        "concept:102"
+      ],
+      "provider_used": "groq",
+      "model_used": "openai/gpt-oss-120b",
+      "fallback_used": true,
+      "prompt_version": "probe-v2",
+      "latency_ms": 1805,
+      "question": "If the gradient for a particular weight is positive, how will that weight be changed during the next update, and what does the learning rate control in this step?",
+      "target_terms_present": true,
+      "novel_term_share": 0.583,
+      "novel_terms": [
+        "changed",
+        "control",
+        "during",
+        "next",
+        "particular",
+        "positive",
+        "step"
+      ]
+    },
+    {
+      "case_id": "bp-relationship-contradicted",
+      "condition": "B",
+      "target_type": "relationship",
+      "target_name": "Gradient descent -> Weight",
+      "target_matches_expected": true,
+      "context_items": 15,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:104",
+        "relationship:204"
+      ],
+      "provider_used": "gemini",
+      "model_used": "gemini-3.6-flash",
+      "fallback_used": false,
+      "prompt_version": "probe-v2",
+      "latency_ms": 2815,
+      "question": "If gradient descent calculates a positive gradient for a specific weight, how does it actually adjust that weight to make sure the loss goes down instead of up?",
+      "target_terms_present": true,
+      "novel_term_share": 0.643,
+      "novel_terms": [
+        "adjust",
+        "calculates",
+        "down",
+        "goes",
+        "instead",
+        "make",
+        "positive",
+        "specific",
+        "sure"
+      ]
+    },
+    {
+      "case_id": "bp-misconception-bp-equals-gd",
+      "condition": "B",
+      "target_type": "misconception",
+      "target_name": "Backpropagation is the same as gradient descent",
+      "target_matches_expected": true,
+      "context_items": 15,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "relationship:201",
+        "relationship:203"
+      ],
+      "provider_used": "gemini",
+      "model_used": "gemini-3.6-flash",
+      "fallback_used": false,
+      "prompt_version": "probe-v2",
+      "latency_ms": 20753,
+      "question": "How would you distinguish the job backpropagation does from the role gradient descent plays when a network learns?",
+      "target_terms_present": true,
+      "novel_term_share": 0.556,
+      "novel_terms": [
+        "distinguish",
+        "job",
+        "learns",
+        "plays",
+        "role"
+      ]
+    },
+    {
+      "case_id": "bp-misconception-gradients-direct",
+      "condition": "B",
+      "target_type": "misconception",
+      "target_name": "Gradients directly change the weights",
+      "target_matches_expected": true,
+      "context_items": 15,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:102",
+        "concept:104",
+        "relationship:203"
+      ],
+      "provider_used": "gemini",
+      "model_used": "gemini-3.6-flash",
+      "fallback_used": false,
+      "prompt_version": "probe-v2",
+      "latency_ms": 17665,
+      "question": "What role do factors like the learning rate play when turning a computed gradient into an actual weight update?",
+      "target_terms_present": false,
+      "novel_term_share": 0.583,
+      "novel_terms": [
+        "actual",
+        "computed",
+        "factors",
+        "like",
+        "play",
+        "role",
+        "turning"
+      ]
+    },
+    {
+      "case_id": "bp-deepen-after-affirmation",
+      "condition": "B",
+      "target_type": "concept",
+      "target_name": "Loss / error",
+      "target_matches_expected": true,
+      "context_items": 15,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:101"
+      ],
+      "provider_used": "gemini",
+      "model_used": "gemini-3.6-flash",
+      "fallback_used": false,
+      "prompt_version": "probe-v2",
+      "latency_ms": 14846,
+      "question": "How would the loss function's result differ when a network makes a prediction that is extremely close to the true target value versus one that is very far off?",
+      "target_terms_present": true,
+      "novel_term_share": 0.5,
+      "novel_terms": [
+        "close",
+        "differ",
+        "extremely",
+        "function's",
+        "makes",
+        "off",
+        "result",
+        "versus"
+      ]
+    },
+    {
+      "case_id": "ofr-overfitting-partial-probe",
+      "condition": "B",
+      "target_type": "concept",
+      "target_name": "Overfitting",
+      "target_matches_expected": true,
+      "context_items": 13,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:101",
+        "concept:102"
+      ],
+      "provider_used": "gemini",
+      "model_used": "gemini-3.6-flash",
+      "fallback_used": false,
+      "prompt_version": "probe-v2",
+      "latency_ms": 18853,
+      "question": "That's a good start, but how does the model's performance on brand new, unseen data help us tell if it actually learned the pattern or just memorised noise?",
+      "target_terms_present": false,
+      "novel_term_share": 0.438,
+      "novel_terms": [
+        "brand",
+        "help",
+        "learned",
+        "memorised",
+        "model's",
+        "start",
+        "that's"
+      ]
+    },
+    {
+      "case_id": "ofr-misconception-more-training",
+      "condition": "B",
+      "target_type": "misconception",
+      "target_name": "More training always helps",
+      "target_matches_expected": true,
+      "context_items": 13,
+      "schema_valid": true,
+      "grounded": true,
+      "grounding_ids": [
+        "concept:101",
+        "concept:102",
+        "misconception:301"
+      ],
+      "provider_used": "gemini",
+      "model_used": "gemini-3.6-flash",
+      "fallback_used": false,
+      "prompt_version": "probe-v2",
+      "latency_ms": 17711,
+      "question": "What tends to happen to a model's performance on unseen validation data if you keep training it for longer and longer after it has already started memorising the training noise?",
+      "target_terms_present": true,
+      "novel_term_share": 0.467,
+      "novel_terms": [
+        "after",
+        "already",
+        "keep",
+        "longer",
+        "model's",
+        "started",
+        "tends"
+      ]
+    }
+  ],
+  "aggregate": {
+    "cases": 9,
+    "generated": 9,
+    "errors": 0,
+    "target_match_rate": 1.0,
+    "grounded_rate": 1.0,
+    "target_terms_rate": 0.778,
+    "mean_novel_term_share": 0.531,
+    "fallback_rate": 0.111,
+    "mean_latency_ms": 11394
+  }
+}
